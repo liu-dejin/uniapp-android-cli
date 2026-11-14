@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import path from 'node:path'
 
 /**
  * @typedef {Object} RunOptions
@@ -16,9 +17,11 @@ import { spawn } from 'node:child_process'
  * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
  */
 export function run(command, args, options = {}) {
-  const isScript = process.platform === 'win32' && /\.(bat|cmd)$/i.test(command)
+  const isWindows = process.platform === 'win32'
+  const resolved = isWindows && !path.extname(command) ? `${command}.cmd` : command
+  const isScript = isWindows && /\.(bat|cmd)$/i.test(resolved)
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(resolved, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       shell: isScript,

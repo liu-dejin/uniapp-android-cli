@@ -8,7 +8,7 @@ const COMMON = {
 }
 
 const SPECS = {
-  init: { ...COMMON },
+  init: { ...COMMON, appkey: { type: 'string' }, keystore: { type: 'string' }, sdk: { type: 'string' } },
   doctor: { ...COMMON },
   devices: { ...COMMON },
   build: {

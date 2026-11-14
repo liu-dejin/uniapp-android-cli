@@ -15,10 +15,10 @@ export async function initCommand(options) {
   const { manifest } = await readProjectManifest(projectDir)
   const resolved = normalizeManifest(manifest)
 
-  const sdkRoot = config.sdk.root || (await detectSdkRoot())
+  const sdkRoot = options.sdk || config.sdk.root || (await detectSdkRoot())
   const androidSdk = config.android.sdkDir || (await detectAndroidSdk())
   const certificateDir = path.join(projectDir, 'certificate/android')
-  const keystore = await detectKeystore(certificateDir)
+  const keystore = options.keystore || (await detectKeystore(certificateDir))
   const properties = path.join(certificateDir, 'keystore.properties')
   const alias = (await exists(properties)) ? await readProperty(properties, 'keyAlias') : ''
 
@@ -33,7 +33,7 @@ export async function initCommand(options) {
       name: resolved.name,
       appid: resolved.appid,
       package: resolved.packageName,
-      appKey: config.projects?.[key]?.appKey ?? '',
+      appKey: options.appkey ?? config.projects?.[key]?.appKey ?? '',
       versionName: resolved.versionName,
       versionCode: resolved.versionCode,
       minSdkVersion: resolved.minSdkVersion,

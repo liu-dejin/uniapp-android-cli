@@ -36,7 +36,8 @@ export async function patchAndroidManifest(file, context) {
   const injected = [permissionLines, featureLines].filter(Boolean).join('\n')
   text = text.replace(/<manifest([^>]*)>/, (match) => `${match}\n\n    <!-- uni-pack 注入 -->\n${injected}\n`)
 
-  text = setApplicationAttr(text, 'android:debuggable', context.debug ? 'true' : 'false')
+  // 不硬编码 debuggable，交给 buildType 自动决定（否则 lint 的 HardcodedDebugMode 会直接失败）
+  text = text.replace(/\s*android:debuggable="[^"]*"/, '')
   text = setApplicationAttr(text, 'android:usesCleartextTraffic', 'true')
 
   if (text.includes('name="dcloud_appkey"')) {

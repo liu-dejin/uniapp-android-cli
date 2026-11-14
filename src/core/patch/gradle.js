@@ -64,12 +64,17 @@ export async function patchAppGradle(file, context) {
   text = replaceExactlyOnce(text, /versionName\s+"[^"]*"/, `versionName "${context.versionName}"`, 'versionName')
 
   const abi = context.abiFilters.map((item) => `'${item}'`).join(', ')
-  text = replaceExactlyOnce(
-    text,
-    /ndk\s*\{\s*abiFilters[^}]*\}/,
-    `ndk {\n            abiFilters ${abi}\n        }`,
-    'abiFilters',
-  )
+  const ndkPattern = /ndk\s*\{\s*abiFilters[^}]*\}/
+  if (ndkPattern.test(text)) {
+    text = replaceExactlyOnce(text, ndkPattern, `ndk {\n            abiFilters ${abi}\n        }`, 'abiFilters')
+  } else {
+    text = replaceExactlyOnce(
+      text,
+      /multiDexEnabled\s+true/,
+      `multiDexEnabled true\n        ndk {\n            abiFilters ${abi}\n        }`,
+      'abiFilters(insert)',
+    )
+  }
 
   const signingBlock = [
     'signingConfigs {',
@@ -83,7 +88,17 @@ export async function patchAppGradle(file, context) {
     '        }',
     '    }',
   ].join('\n')
-  text = replaceExactlyOnce(text, /signingConfigs\s*\{[\s\S]*?\n\s*\}/, signingBlock, 'signingConfigs')
+  text = replaceExactlyOnce(text, /signingConfigs\s*\{[\s\S]*?\n {4}\}/, signingBlock, 'signingConfigs')
+
+  // targetSdk 30 是电视端的既定配置，关掉对应的 lint 阻断
+  if (!text.includes('ExpiredTargetSdkVersion')) {
+    text = replaceExactlyOnce(
+      text,
+      /buildTypes\s*\{/,
+      "lint {\n        disable 'ExpiredTargetSdkVersion'\n    }\n    buildTypes {",
+      'lint',
+    )
+  }
 
   await writeText(file, text)
 }
