@@ -29,7 +29,6 @@ const SPECS = {
     install: { type: 'boolean' },
     push: { type: 'boolean' },
     logs: { type: 'boolean' },
-    port: { type: 'string' },
     device: { type: 'string' },
     base: { type: 'string' },
     build: { type: 'boolean' },
@@ -126,7 +125,7 @@ function printHelp() {
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
                    [--skip-web] [--out <dir>] [--offline]
   uni-pack wgt     [-p <dir>] [--skip-web] [--out <dir>]
-  uni-pack debug   [-p <dir>] [--install] [--push] [--logs] [--port 8787] [--device <serial>]
+  uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
 
 配置：~/.uniapp-android-cli/config.json（可被项目内 uni-pack.config.json 覆盖）
 `)

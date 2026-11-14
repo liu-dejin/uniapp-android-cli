@@ -76,16 +76,16 @@ uni-pack debug   [-p <dir>] [--install] [--build] [--push] [--logs] [--port 8787
 4. 执行 `gradlew :simpleDemo:assembleRelease|assembleDebug`。
 5. `apksigner verify` 校验并输出 APK。
 
-## 调试（基座 + 推资源）
+## 调试（基座 + 覆盖安装）
 
 ```bash
-uni-pack debug -p <dir> --build --install   # 首次：构建并安装基座
-uni-pack debug -p <dir> --push --logs       # 之后：构建资源并推送到设备
+uni-pack debug -p <dir> --push --logs   # 重建基座、安装、启动并输出日志
 ```
 
-原理：基座启动后请求本机 `http://127.0.0.1:<port>`（通过 `adb reverse` 打通），
-发现 wgt 的 sha256 变化就下载并通过 `plus.runtime.install` 安装后自动重启。
-引导脚本只注入 debug 基座的 `app-service.js`，正式包不受影响。
+`--push` 会重新编译前端资源并整体重建自定义基座，然后 `adb install -r` 覆盖安装并拉起应用。
+
+> 没有采用「wgt + 热更新」方案：实测 SDK 5.34 上 `plus.runtime.install` 安装 wgt 后基座会在
+> `io.dcloud.feature.pdr.RuntimeFeatureImpl` 抛空指针直接崩溃。`wgt` 命令仍可用于业务侧自建更新。
 
 > 基座与正式包同包名同签名，安装基座会覆盖设备上的正式包。
 
@@ -93,4 +93,4 @@ uni-pack debug -p <dir> --push --logs       # 之后：构建资源并推送到�
 
 - 仅支持普通 uni-app（Vue 3），不含 uni-app x / vapor / iOS。
 - AAR 为基线集合；`manifest.json` 声明了 `app-plus.modules` 时会直接报错，需自行补充。
-- 不实现 HBuilderX 的私有同步协议。
+- 调试采用「重建基座 + 覆盖安装」，不做 wgt 热更新。

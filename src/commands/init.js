@@ -47,7 +47,7 @@ export async function initCommand(options) {
         storePasswordEnv: 'UNI_PACK_STORE_PASS',
         keyPasswordEnv: 'UNI_PACK_KEY_PASS',
       },
-      debug: { port: 8787, launchActivity: 'io.dcloud.PandoraEntry' },
+      debug: { launchActivity: 'io.dcloud.PandoraEntry' },
     },
   }
 

@@ -1,6 +1,5 @@
 import { copyFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { PackError, EXIT } from './errors.js'
 import { emptyDir, ensureDir, exists } from './fsx.js'
 import { runGradle } from './gradle.js'
@@ -13,9 +12,6 @@ import { BASE_AARS, DEBUG_AAR, resolveAndroidTools, resolveJavaHome, resolveSdk 
 import { resolveSigning } from './signing.js'
 import { runWebBuild } from './webBuild.js'
 import { apkBaseName, findApk, publishApk } from './output.js'
-
-const here = path.dirname(fileURLToPath(import.meta.url))
-const BOOTSTRAP_TEMPLATE = path.join(here, '..', 'templates/debug-bootstrap.js')
 
 /**
  * @param {Object} input
@@ -105,8 +101,6 @@ export async function buildProject(input) {
     versionName: resolved.versionName,
     debug,
     projectDir: project.projectDir,
-    debugPort: Number(project.debug?.port ?? 8787),
-    bootstrapTemplate: BOOTSTRAP_TEMPLATE,
   })
   logger.success('配置写入完成')
 

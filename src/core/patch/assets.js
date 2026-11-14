@@ -12,8 +12,6 @@ import { copyTree, ensureDir, exists, readText, writeText } from '../fsx.js'
  * @property {string} versionName
  * @property {boolean} debug
  * @property {string} projectDir
- * @property {number} debugPort
- * @property {string} [bootstrapTemplate]
  */
 
 /**
@@ -31,10 +29,6 @@ export async function applyAssets(context) {
   await writeControlFile(assetsData, context)
   await patchStrings(mainDir, context.appName)
   await applyIcons(mainDir, context.projectDir)
-
-  if (context.debug && context.bootstrapTemplate) {
-    await injectBootstrap(wwwDir, context.bootstrapTemplate, context.debugPort)
-  }
 }
 
 /**
@@ -104,18 +98,6 @@ async function copyFile(from, to) {
   await ensureDir(path.dirname(to))
   const { copyFile: copy } = await import('node:fs/promises')
   await copy(from, to)
-}
-
-/**
- * @param {string} wwwDir
- * @param {string} templateUrl
- * @param {number} port
- */
-async function injectBootstrap(wwwDir, templateUrl, port) {
-  const target = path.join(wwwDir, 'app-service.js')
-  const bootstrap = (await readText(templateUrl)).replaceAll('__UNI_PACK_PORT__', String(port))
-  const text = await readText(target)
-  await writeText(target, `${text}\n\n// uni-pack debug bootstrap\n${bootstrap}\n`)
 }
 
 /**
