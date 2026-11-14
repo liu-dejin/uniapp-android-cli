@@ -2,15 +2,16 @@ import path from 'node:path'
 import { CONFIG_FILE, loadConfig, saveConfig } from '../core/config.js'
 import { PackError, EXIT } from '../core/errors.js'
 import { exists, readText } from '../core/fsx.js'
+import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
-import { normalizeManifest, readProjectManifest } from '../core/project.js'
-import { resolveSdkRootInput } from '../core/sdk.js'
+import { normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
+import { findSdkForVersion, resolveSdkRootInput } from '../core/sdk.js'
+import { readCompilerVersion, readSdkVersion } from '../core/version.js'
 
 // 这些字段以 manifest 为准；旧配置里的快照会在重跑 init 时清掉。
 const SNAPSHOT_FIELDS = [
   'name',
   'appid',
-  'package',
   'versionName',
   'versionCode',
   'minSdkVersion',
@@ -26,12 +27,22 @@ export async function initCommand(options) {
   const projectDir = path.resolve(options.project ?? options.cwd ?? process.cwd())
   const config = await loadConfig()
 
-  const { manifest } = await readProjectManifest(projectDir)
-  const resolved = normalizeManifest(manifest)
+  const { manifest, type } = await readProjectManifest(projectDir)
+  const fallbackPackage = String(options.package ?? '') || (await readProjectPackage(projectDir))
+  const resolved = normalizeManifest(manifest, { package: fallbackPackage }, { validate: false })
   const key = projectKey(resolved)
   const existing = config.projects?.[key] ?? {}
 
-  const sdkRoot = await resolveSdkRoot(options.sdk ?? config.sdk.root)
+  const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { projectDir, explicit: options.hbuilderx }) : null
+  const compiler = await readCompilerVersion({ ...existing, type, projectDir }, { hbuilderxRoot: hbuilderx?.root })
+
+  const sdkRoot = await resolveSdkRoot({
+    config,
+    explicit: options.sdk,
+    existingRoot: existing.sdkRoot,
+    version: compiler.version,
+  })
+  const sdkVersion = await readSdkVersion(sdkRoot)
   const androidSdk = await resolveAndroidSdk(options.androidSdk ?? config.android.sdkDir)
   const javaHome = await resolveJdk(options.jdk ?? config.android.jdk)
   const certificateDir = path.join(projectDir, 'certificate/android')
@@ -41,8 +52,8 @@ export async function initCommand(options) {
     (await detectKeystore(certificateDir)) ||
     String(existing.signing?.keystore ?? '')
   const alias = (await exists(properties)) ? await readProperty(properties, 'keyAlias') : ''
-
-  config.sdk = { ...config.sdk, root: sdkRoot }
+  config.sdk = { ...config.sdk, root: config.sdk.root || sdkRoot }
+  config.hbuilderx = { ...config.hbuilderx, root: config.hbuilderx.root || hbuilderx?.root || '' }
   config.android = {
     ...config.android,
     sdkDir: androidSdk || config.android.sdkDir || '',
@@ -52,22 +63,33 @@ export async function initCommand(options) {
   for (const field of SNAPSHOT_FIELDS) {
     delete next[field]
   }
+  const webBuild =
+    type === 'hbuilderx'
+      ? existing.webBuild?.mode === 'hbuilderx'
+        ? existing.webBuild
+        : { mode: 'hbuilderx', outputDir: 'unpackage/dist/build/app-plus' }
+      : (existing.webBuild ?? {
+          command: 'pnpm',
+          args: ['run', 'build:app-android'],
+          outputDir: 'dist/build/app',
+        })
+
   config.projects = {
     ...(config.projects ?? {}),
     [key]: {
       ...next,
       projectDir,
+      type,
+      sdkRoot,
+      hbuilderxRoot: hbuilderx?.root ?? existing.hbuilderxRoot ?? '',
+      package: fallbackPackage || resolved.packageName || existing.package || '',
       appKey: options.appkey ?? existing.appKey ?? '',
       outputDir: existing.outputDir ?? path.join(projectDir, 'apk'),
-      webBuild: existing.webBuild ?? {
-        command: 'pnpm',
-        args: ['run', 'build:app-android'],
-        outputDir: 'dist/build/app',
-      },
+      webBuild,
       signing: {
         ...(existing.signing ?? {}),
         keystore,
-        keyAlias: alias || existing.signing?.keyAlias || 'key0',
+        keyAlias: options.keyAlias || alias || existing.signing?.keyAlias || 'key0',
         keystoreProperties: (await exists(properties))
           ? properties
           : (existing.signing?.keystoreProperties ?? ''),
@@ -85,15 +107,25 @@ export async function initCommand(options) {
 
   logger.step('已写入配置')
   logger.info(CONFIG_FILE)
-  logger.info(`项目：${key}  ${resolved.appid}  ${resolved.packageName}`)
+  logger.info(`项目：${key}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'}）  ${resolved.appid}  ${resolved.packageName || '(未配置包名)'}`)
   logger.info(`版本：${resolved.versionName}(${resolved.versionCode})，以 manifest.json 为准`)
-  logger.info(`离线 SDK：${sdkRoot}`)
+  logger.info(`编译器：${compiler.version ?? '未知'}（${compiler.source}）`)
+  logger.info(`离线 SDK：${sdkRoot}（${sdkVersion ?? '版本未知'}）`)
+  if (type === 'hbuilderx') {
+    logger.info(`HBuilderX：${hbuilderx?.root || '(未找到)'}`)
+  }
   logger.info(`Android SDK：${androidSdk || '(未找到)'}`)
   logger.info(`JDK：${javaHome || '(未找到，构建时用 JAVA_HOME)'}`)
   logger.info(`输出：${config.projects[key].outputDir}`)
   logger.info(`证书：${keystore || '(未找到，请手工填写 signing.keystore)'}`)
+  if (!config.projects[key].package) {
+    logger.warn('未配置包名：请在 manifest.json 的 app-plus.distribute.android.packagename 填写，或重跑 init 时加 --package')
+  }
   if (!config.projects[key].appKey) {
     logger.warn('未填写 DCloud AppKey，请在配置的 appKey 字段补齐（后台按 appid + 包名 + 证书 SHA1 绑定）')
+  }
+  if (type === 'hbuilderx' && !hbuilderx) {
+    logger.warn('未找到 HBuilderX：构建时无法编译源码，请用 --hbuilderx <目录> 指定或设置 HBUILDERX_HOME')
   }
   if (!androidSdk) {
     logger.warn('未找到 Android SDK：设置环境变量 ANDROID_HOME，或执行 uni-pack init --android-sdk <目录>')
@@ -117,20 +149,52 @@ function projectKey(resolved) {
 }
 
 /**
- * @param {string | undefined} explicit
+ * @param {Object} options
+ * @param {any} options.config
+ * @param {string} [options.explicit]
+ * @param {string} [options.existingRoot]
+ * @param {string | null} [options.version]
+ * @returns {Promise<string>}
  */
-async function resolveSdkRoot(explicit) {
-  const candidates = [explicit, process.env.UNI_SDK_ROOT, 'C:/develop/android-sdk/uniapp-Android']
-  for (const candidate of candidates) {
-    const value = String(candidate ?? '').trim()
-    if (!value) {
-      continue
+async function resolveSdkRoot(options) {
+  const explicit = String(options.explicit ?? '').trim()
+  if (explicit) {
+    const root = await resolveSdkRootInput(explicit)
+    if (!root) {
+      throw new PackError(`离线 SDK 路径无效：${explicit}`, EXIT.PREFLIGHT, {
+        hint: '--sdk 应指向包含 HBuilder-Integrate-AS 的 Android-SDK@x.yy 目录',
+      })
     }
-    const root = await resolveSdkRootInput(value)
+    return root
+  }
+
+  const configured = [options.existingRoot, options.config.sdk?.root, process.env.UNI_SDK_ROOT]
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+  for (const candidate of configured) {
+    const root = await resolveSdkRootInput(candidate)
+    if (root) {
+      const version = await readSdkVersion(root)
+      if (!options.version || !version || version === options.version) {
+        return root
+      }
+    }
+  }
+
+  if (options.version) {
+    const matched = await findSdkForVersion(options.config, options.version)
+    if (matched) {
+      return matched
+    }
+  }
+
+  for (const candidate of [options.config.sdk?.root, process.env.UNI_SDK_ROOT]) {
+    const root = await resolveSdkRootInput(String(candidate ?? ''))
     if (root) {
       return root
     }
   }
+
   throw new PackError('未找到 DCloud Android 离线 SDK', EXIT.PREFLIGHT, {
     hint: [
       '任选一种方式指定：',

@@ -1,25 +1,61 @@
 {
   "name": "uniapp-android-cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "离线打包 uni-app Android 应用：正式包、自定义基座、wgt、设备调试",
+  "keywords": [
+    "uni-app",
+    "uniapp",
+    "android",
+    "apk",
+    "offline",
+    "dcloud",
+    "hbuilderx",
+    "wgt",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "liudejin <liudejin@kis2.cn>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liu-dejin/uniapp-android-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/liu-dejin/uniapp-android-cli/issues"
+  },
+  "homepage": "https://github.com/liu-dejin/uniapp-android-cli#readme",
   "bin": {
     "uni-pack": "bin/uni-pack.js"
   },
   "files": [
     "bin",
-    "src",
-    "README.md"
+    "src"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "packageManager": "npm@11.21.1",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^20.19.0 || >=22.12.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.15.0",
+      "onFail": "warn"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test": "node --test",
     "link": "npm link",
-    "pack:cli": "npm pack"
+    "pack:cli": "npm pack",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "dependencies": {
     "yazl": "^3.3.1"

@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { loadConfig, resolveProject } from '../core/config.js'
 import { ensureDir, exists } from '../core/fsx.js'
+import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
 import { readProjectManifest } from '../core/project.js'
 import { runWebBuild } from '../core/webBuild.js'
@@ -13,22 +14,25 @@ export async function wgtCommand(options) {
   const logger = new Logger(options)
   const config = await loadConfig()
   const { project } = await resolveProject(config, options.project, options.cwd)
+  const { manifest, type } = await readProjectManifest(project.projectDir)
+  project.type = type
 
-  let resourcesDir = path.resolve(project.projectDir, String(project.webBuild?.outputDir ?? 'dist/build/app'))
+  const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { project }) : null
+  let resourcesDir = path.resolve(
+    project.projectDir,
+    String(project.webBuild?.outputDir ?? (type === 'hbuilderx' ? 'unpackage/dist/build/app-plus' : 'dist/build/app')),
+  )
   if (options.skipWeb) {
     if (!(await exists(path.join(resourcesDir, 'app-service.js')))) {
       throw new Error('--skip-web 但前端产物不存在，请先构建')
     }
     logger.info(`跳过前端构建，使用 ${resourcesDir}`)
   } else {
-    resourcesDir = (await runWebBuild(project, logger)).dir
+    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined })).dir
   }
 
-  const { manifest } = await readProjectManifest(project.projectDir)
   const appid = String(project.appid ?? manifest.appid)
-  const outputDir = path.resolve(
-    options.out ?? path.join(project.projectDir, 'unpackage/release/wgt'),
-  )
+  const outputDir = path.resolve(options.out ?? path.join(project.projectDir, 'unpackage/release/wgt'))
   await ensureDir(outputDir)
 
   logger.step('生成 wgt')

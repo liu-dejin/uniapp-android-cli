@@ -15,7 +15,10 @@ const SPECS = {
     ...COMMON,
     appkey: { type: 'string' },
     keystore: { type: 'string' },
+    'key-alias': { type: 'string' },
+    package: { type: 'string' },
     sdk: { type: 'string' },
+    hbuilderx: { type: 'string' },
     'android-sdk': { type: 'string' },
     jdk: { type: 'string' },
   },
@@ -134,7 +137,8 @@ function printHelp() {
   console.log(`uni-pack ${VERSION} — uni-app Android 离线打包
 
 用法：
-  uni-pack init    [-p <dir>] [--appkey <key>] [--sdk <dir>] [--android-sdk <dir>] [--jdk <dir>]
+  uni-pack init    [-p <dir>] [--appkey <key>] [--package <包名>] [--sdk <dir>] [--hbuilderx <dir>]
+                   [--android-sdk <dir>] [--jdk <dir>]
   uni-pack doctor  [-p <dir>] [--json]                环境自检
   uni-pack devices                                    列出设备
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
@@ -143,8 +147,14 @@ function printHelp() {
   uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
   uni-pack version                                    显示版本
 
+支持两种项目：
+  CLI 项目       src/manifest.json，用项目的 pnpm build:app-android 编译
+  HBuilderX 项目 根目录 manifest.json，用 HBuilderX 自带编译器编译
+
 环境变量：
   UNI_SDK_ROOT    含 HBuilder-Integrate-AS 的离线 SDK 目录
+  UNI_SDK_DIRS    额外扫描 Android-SDK@x.yy 的目录（多个用 ; 分隔）
+  HBUILDERX_HOME  HBuilderX 安装目录
   ANDROID_HOME    Android SDK 根目录
   JAVA_HOME       JDK 17+ 根目录
 

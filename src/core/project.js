@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
-import { exists, readJson } from './fsx.js'
+import { exists, readJson, readJsonc, readText } from './fsx.js'
 
 /**
  * @typedef {Object} ProjectManifest
@@ -18,24 +18,93 @@ import { exists, readJson } from './fsx.js'
  */
 
 /**
- * 读取项目 manifest：优先生成后的 src/manifest.json，其次已构建产物，最后项目根目录。
+ * @typedef {Object} ProjectLayout
+ * @property {'cli' | 'hbuilderx' | 'unknown'} type
+ * @property {string} inputDir       uni-app 源码目录（CLI 为 src，HBuilderX 为项目根）
+ * @property {string} manifestFile   manifest.json 路径
+ */
+
+/**
+ * 两种项目的结构差异：
+ * - CLI（vite starter）：src/manifest.json，产物 dist/build/app
+ * - HBuilderX：根目录 manifest.json（JSONC），产物 unpackage/dist/build/app-plus
  * @param {string} projectDir
- * @returns {Promise<{ manifest: any, file: string }>}
+ * @returns {Promise<ProjectLayout>}
+ */
+export async function detectProject(projectDir) {
+  const srcManifest = path.join(projectDir, 'src/manifest.json')
+  if (await exists(srcManifest)) {
+    return { type: 'cli', inputDir: path.join(projectDir, 'src'), manifestFile: srcManifest }
+  }
+  const rootManifest = path.join(projectDir, 'manifest.json')
+  if (await exists(rootManifest)) {
+    return { type: 'hbuilderx', inputDir: projectDir, manifestFile: rootManifest }
+  }
+  return { type: 'unknown', inputDir: projectDir, manifestFile: '' }
+}
+
+/**
+ * @param {string} projectDir
+ * @returns {Promise<boolean>}
+ */
+export async function isUniappProject(projectDir) {
+  return (await detectProject(projectDir)).type !== 'unknown'
+}
+
+/**
+ * 读取项目 manifest：优先生成后的 src/manifest.json，其次已构建产物，最后项目根目录。
+ * HBuilderX 的 manifest.json 含注释与末尾逗号，走 JSONC 解析。
+ * @param {string} projectDir
+ * @returns {Promise<{ manifest: any, file: string, type: ProjectLayout['type'], inputDir: string }>}
  */
 export async function readProjectManifest(projectDir) {
-  const candidates = [
-    path.join(projectDir, 'src/manifest.json'),
-    path.join(projectDir, 'dist/build/app/manifest.json'),
-    path.join(projectDir, 'manifest.json'),
-  ]
-  for (const file of candidates) {
-    if (await exists(file)) {
-      return { manifest: await readJson(file), file }
+  const layout = await detectProject(projectDir)
+  if (layout.type !== 'unknown') {
+    return {
+      manifest: await readJsonc(layout.manifestFile),
+      file: layout.manifestFile,
+      type: layout.type,
+      inputDir: layout.inputDir,
     }
   }
+
+  const candidates = [
+    { file: path.join(projectDir, 'dist/build/app/manifest.json'), type: 'cli', inputDir: path.join(projectDir, 'src') },
+    {
+      file: path.join(projectDir, 'unpackage/dist/build/app-plus/manifest.json'),
+      type: 'hbuilderx',
+      inputDir: projectDir,
+    },
+    { file: path.join(projectDir, 'unpackage/dist/build/app/manifest.json'), type: 'hbuilderx', inputDir: projectDir },
+  ]
+  for (const candidate of candidates) {
+    if (await exists(candidate.file)) {
+      return {
+        manifest: await readJson(candidate.file),
+        file: candidate.file,
+        type: /** @type {ProjectLayout['type']} */ (candidate.type),
+        inputDir: candidate.inputDir,
+      }
+    }
+  }
+
   throw new PackError(`找不到 manifest.json：${projectDir}`, EXIT.CONFIG, {
-    hint: '在 uni-app 项目根目录确认存在 src/manifest.json；若只有构建产物，请先执行一次前端构建',
+    hint: '确认目录是 uni-app 项目（CLI 项目有 src/manifest.json，HBuilderX 项目根目录有 manifest.json）',
   })
+}
+
+/**
+ * HBuilderX 项目常常不在 manifest.json 里写包名（云打包时单独填），
+ * 项目根的 AndroidManifest.xml 是最后可用的兜底来源。
+ * @param {string} projectDir
+ * @returns {Promise<string>}
+ */
+export async function readProjectPackage(projectDir) {
+  const file = path.join(projectDir, 'AndroidManifest.xml')
+  if (!(await exists(file))) {
+    return ''
+  }
+  return /package="([^"]+)"/.exec(await readText(file))?.[1] ?? ''
 }
 
 /**
@@ -55,9 +124,10 @@ function firstPresent(...values) {
  * 配置里的同名字段可能是 init 时的快照，直接覆盖会让改过 manifest 的项目静默打旧版本。
  * @param {any} manifest
  * @param {any} [fallbacks]
+ * @param {{ validate?: boolean }} [options]
  * @returns {ProjectManifest}
  */
-export function normalizeManifest(manifest, fallbacks = {}) {
+export function normalizeManifest(manifest, fallbacks = {}, options = {}) {
   const distribute = manifest?.['app-plus']?.distribute ?? {}
   const android = distribute.android ?? {}
   const manifestAbi = Array.isArray(android.abiFilters) && android.abiFilters.length > 0 ? android.abiFilters : undefined
@@ -66,11 +136,11 @@ export function normalizeManifest(manifest, fallbacks = {}) {
   const features = extractFeatureNames(android.permissions ?? [])
 
   const result = {
-    appid: String(firstPresent(manifest?.appid, fallbacks.appid, '')),
-    name: String(firstPresent(manifest?.name, fallbacks.name, '')),
-    versionName: String(firstPresent(manifest?.versionName, fallbacks.versionName, '1.0.0')),
-    versionCode: Number(firstPresent(manifest?.versionCode, manifest?.version?.code, fallbacks.versionCode, 1)),
-    packageName: String(firstPresent(android.packagename, fallbacks.package, '')),
+    appid: String(firstPresent(manifest?.appid, fallbacks.appid) ?? ''),
+    name: String(firstPresent(manifest?.name, fallbacks.name) ?? ''),
+    versionName: String(firstPresent(manifest?.versionName, fallbacks.versionName) ?? '1.0.0'),
+    versionCode: Number(firstPresent(manifest?.versionCode, manifest?.version?.code, fallbacks.versionCode) ?? 1),
+    packageName: String(firstPresent(android.packagename, fallbacks.package) ?? ''),
     abiFilters: firstPresent(manifestAbi, fallbacks.abiFilters, ['armeabi-v7a', 'arm64-v8a']),
     minSdkVersion: Number(firstPresent(android.minSdkVersion, fallbacks.minSdkVersion, 21)),
     targetSdkVersion: Number(firstPresent(android.targetSdkVersion, fallbacks.targetSdkVersion, 30)),
@@ -79,7 +149,9 @@ export function normalizeManifest(manifest, fallbacks = {}) {
     modules: Object.keys(manifest?.['app-plus']?.modules ?? {}),
   }
 
-  validateManifest(result)
+  if (options.validate !== false) {
+    validateManifest(result)
+  }
   return result
 }
 
@@ -91,7 +163,9 @@ function validateManifest(manifest) {
     throw new PackError(`appid 不合法：${manifest.appid || '(空)'}，应为 __UNI__XXXXXX`, EXIT.CONFIG)
   }
   if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(manifest.packageName)) {
-    throw new PackError(`包名不合法：${manifest.packageName || '(空)'}`, EXIT.CONFIG)
+    throw new PackError(`包名不合法：${manifest.packageName || '(空)'}`, EXIT.CONFIG, {
+      hint: '在 manifest.json 的 app-plus.distribute.android.packagename 填写，或 init 时用 --package 指定',
+    })
   }
   if (!Number.isInteger(manifest.versionCode) || manifest.versionCode <= 0) {
     throw new PackError(`versionCode 不合法：${manifest.versionCode}`, EXIT.CONFIG)

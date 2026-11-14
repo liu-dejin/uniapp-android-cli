@@ -6,12 +6,13 @@ import { copyTree, ensureDir, exists, readText, writeText } from '../fsx.js'
  * @typedef {Object} AssetsContext
  * @property {string} moduleDir        simpleDemo 目录
  * @property {string} dataDir          SDK assets/data
- * @property {string} resourcesDir     构建产物 dist/build/app
+ * @property {string} resourcesDir     构建产物 dist/build/app 或 unpackage/dist/build/app-plus
  * @property {string} appid
  * @property {string} appName
  * @property {string} versionName
  * @property {boolean} debug
  * @property {string} projectDir
+ * @property {any} [manifest]          项目 manifest，用于读取图标与启动图路径
  */
 
 /**
@@ -28,7 +29,7 @@ export async function applyAssets(context) {
   await copyTree(context.resourcesDir, wwwDir)
   await writeControlFile(assetsData, context)
   await patchStrings(mainDir, context.appName)
-  await applyIcons(mainDir, context.projectDir)
+  await applyIcons(mainDir, context.projectDir, context.manifest)
 }
 
 /**
@@ -54,40 +55,84 @@ async function patchStrings(mainDir, appName) {
   await writeText(file, text.replace(/(name="app_name">)[^<]*(<)/, `$1${escapeXml(appName)}$2`))
 }
 
+const ICON_DENSITIES = ['hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
+const CLIENT_ICON_FILES = { hdpi: '72x72.png', xhdpi: '96x96.png', xxhdpi: '144x144.png', xxxhdpi: '192x192.png' }
+
 /**
+ * 图标与启动图优先用 manifest 声明的路径（CLI 与 HBuilderX 都适用），
+ * 其次回退到两种项目各自的默认目录。
  * @param {string} mainDir
  * @param {string} projectDir
+ * @param {any} [manifest]
  */
-async function applyIcons(mainDir, projectDir) {
-  const iconDir = path.join(projectDir, 'src/static/app/icons')
-  const splashDir = path.join(projectDir, 'src/static/app/splash')
-  if (!(await exists(iconDir))) {
-    return
-  }
+async function applyIcons(mainDir, projectDir, manifest) {
+  const distribute = manifest?.['app-plus']?.distribute ?? {}
+  const manifestIcons = distribute.icons?.android ?? {}
+  const manifestSplash = distribute.splashscreen?.android ?? {}
 
-  const icons = { hdpi: '72x72.png', xhdpi: '96x96.png', xxhdpi: '144x144.png', xxxhdpi: '192x192.png' }
-  for (const [density, file] of Object.entries(icons)) {
-    const source = path.join(iconDir, file)
-    if (await exists(source)) {
+  for (const density of ICON_DENSITIES) {
+    const source = await firstExisting([
+      resolveMaybeRelative(projectDir, manifestIcons[density]),
+      path.join(projectDir, 'src/static/app/icons', CLIENT_ICON_FILES[density]),
+      path.join(projectDir, 'unpackage/res/icons', CLIENT_ICON_FILES[density]),
+    ])
+    if (source) {
       await copyFile(source, path.join(mainDir, `res/drawable-${density}/icon.png`))
     }
+
+    const splash = await firstExisting([
+      resolveMaybeRelative(projectDir, manifestSplash[density]),
+      path.join(projectDir, 'src/static/app/splash', `splash-${density}.png`),
+      path.join(projectDir, 'unpackage/res/splash/splash.png'),
+      path.join(projectDir, 'unpackage/res/splash', `splash-${density}.png`),
+    ])
+    if (splash) {
+      await copyFile(splash, path.join(mainDir, `res/drawable-${density}/splash.png`))
+    }
   }
-  const fallbackIcon = path.join(iconDir, '192x192.png')
-  if (await exists(fallbackIcon)) {
+
+  const fallbackIcon = await firstExisting([
+    resolveMaybeRelative(projectDir, manifestIcons.xxxhdpi),
+    path.join(projectDir, 'src/static/app/icons/192x192.png'),
+    path.join(projectDir, 'unpackage/res/icons/192x192.png'),
+  ])
+  if (fallbackIcon) {
     await copyFile(fallbackIcon, path.join(mainDir, 'res/drawable/icon.png'))
   }
 
-  const splashes = { hdpi: 'splash-hdpi.png', xhdpi: 'splash-xhdpi.png', xxhdpi: 'splash-xxhdpi.png' }
-  for (const [density, file] of Object.entries(splashes)) {
-    const source = path.join(splashDir, file)
-    if (await exists(source)) {
-      await copyFile(source, path.join(mainDir, `res/drawable-${density}/splash.png`))
-    }
-  }
-  const fallbackSplash = path.join(splashDir, 'splash-xxhdpi.png')
-  if (await exists(fallbackSplash)) {
+  const fallbackSplash = await firstExisting([
+    resolveMaybeRelative(projectDir, manifestSplash.xxhdpi),
+    path.join(projectDir, 'src/static/app/splash/splash-xxhdpi.png'),
+    path.join(projectDir, 'unpackage/res/splash/splash.png'),
+  ])
+  if (fallbackSplash) {
     await copyFile(fallbackSplash, path.join(mainDir, 'res/drawable/splash.png'))
   }
+}
+
+/**
+ * @param {string} projectDir
+ * @param {unknown} value
+ * @returns {string}
+ */
+function resolveMaybeRelative(projectDir, value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return ''
+  }
+  return path.isAbsolute(value) ? value : path.join(projectDir, value)
+}
+
+/**
+ * @param {string[]} candidates
+ * @returns {Promise<string>}
+ */
+async function firstExisting(candidates) {
+  for (const candidate of candidates) {
+    if (candidate && (await exists(candidate))) {
+      return candidate
+    }
+  }
+  return ''
 }
 
 /**

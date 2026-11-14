@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
 import { exists, readJson, readText } from './fsx.js'
+import { normalizeHbuilderxVersion, readLastBuiltVersion } from './hbuilderx.js'
 
 /**
  * 把 uni-app npm 版本换算成 HBuilderX 版本号。
@@ -32,6 +33,32 @@ export async function readProjectCompilerVersion(projectDir) {
   }
   const pkg = await readJson(file)
   return decodeCompilerVersion(String(pkg.version ?? ''))
+}
+
+/**
+ * CLI 项目跟随 @dcloudio 编译器；HBuilderX 项目跟随 HBuilderX 自身版本。
+ * @param {{ type?: string, projectDir: string }} project
+ * @param {{ hbuilderxRoot?: string }} [options]
+ * @returns {Promise<{ version: string | null, source: string }>}
+ */
+export async function readCompilerVersion(project, options = {}) {
+  if (project.type === 'hbuilderx') {
+    if (options.hbuilderxRoot) {
+      const about = path.join(options.hbuilderxRoot, 'plugins', 'about', 'package.json')
+      if (await exists(about)) {
+        const pkg = await readJson(about).catch(() => ({}))
+        return { version: normalizeHbuilderxVersion(pkg.version), source: `HBuilderX ${options.hbuilderxRoot}` }
+      }
+    }
+    const last = await readLastBuiltVersion(project.projectDir)
+    return { version: last || null, source: last ? '上次构建产物' : '未知（未找到 HBuilderX）' }
+  }
+
+  const version = await readProjectCompilerVersion(project.projectDir)
+  return {
+    version,
+    source: version ? '@dcloudio/uni-app' : '未知（缺少 node_modules/@dcloudio/uni-app）',
+  }
 }
 
 /**
@@ -68,18 +95,26 @@ export function assertVersionMatch(versions) {
 
 /**
  * @param {{ compiler: string | null, sdk: string | null }} versions
+ * @param {{ type?: string }} [options]
  */
-export function versionMismatchError(versions) {
+export function versionMismatchError(versions, options = {}) {
+  const hint =
+    options.type === 'hbuilderx'
+      ? [
+          'HBuilderX 项目的版本由 HBuilderX 决定，两边必须一致，二选一：',
+          `  1) 安装与离线 SDK ${versions.sdk ?? '?'} 对应的 HBuilderX 版本`,
+          `  2) 把 sdk.root 指向与 HBuilderX ${versions.compiler ?? '?'} 对应的 Android-SDK@${versions.compiler ?? 'x.yy'}`,
+          '确认后重新执行 uni-pack doctor',
+        ]
+      : [
+          '两边必须一致，二选一：',
+          `  1) 升级项目依赖到 SDK 对应版本：npx @dcloudio/uvm@latest`,
+          `  2) 下载与当前编译版本 ${versions.compiler ?? '?'} 匹配的 Android 离线 SDK，并在配置 sdk.root 指向它`,
+          '确认后重新执行 uni-pack doctor',
+        ]
   return new PackError(
     `uni-app 编译版本 ${versions.compiler ?? '未知'} 与离线 SDK ${versions.sdk ?? '未知'} 不一致`,
     EXIT.PREFLIGHT,
-    {
-      hint: [
-        '两边必须一致，二选一：',
-        `  1) 升级项目依赖到 SDK 对应版本：npx @dcloudio/uvm@latest`,
-        `  2) 下载与当前编译版本 ${versions.compiler ?? '?'} 匹配的 Android 离线 SDK，并在配置 sdk.root 指向它`,
-        '确认后重新执行 uni-pack doctor',
-      ].join('\n'),
-    },
+    { hint: hint.join('\n') },
   )
 }

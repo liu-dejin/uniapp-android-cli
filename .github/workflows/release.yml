@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # OIDC，换取一次性发布凭据并生成 provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Upgrade npm
+        run: npm install --global npm@^11.15.0
+      - name: Install
+        run: npm ci
+      - name: Check tag matches package version
+        run: |
+          node -e "
+          const pkg = require('./package.json')
+          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, '')
+          if (pkg.version !== tag) {
+            console.error('tag ' + tag + ' != package.json ' + pkg.version)
+            process.exit(1)
+          }
+          "
+      # prepublishOnly 会再跑一遍 typecheck 与单测
+      - name: Publish
+        run: npm publish --provenance

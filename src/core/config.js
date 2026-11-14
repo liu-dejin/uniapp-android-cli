@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
 import { exists, readJson, writeJson } from './fsx.js'
+import { detectProject, isUniappProject } from './project.js'
 
 export const CONFIG_DIR = path.join(os.homedir(), '.uniapp-android-cli')
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
@@ -13,13 +14,18 @@ export function defaultConfig() {
     version: 1,
     sdk: {
       root: '',
+      searchDirs: [],
       template: 'HBuilder-Integrate-AS',
       libsDir: 'SDK/libs',
       dataDir: 'SDK/assets/data',
     },
+    hbuilderx: {
+      root: '',
+      searchDirs: [],
+    },
     android: {
       sdkDir: '',
-      buildTools: '35.0.0',
+      buildTools: '',
       jdk: '',
     },
     workDir: path.join(CONFIG_DIR, 'work'),
@@ -46,6 +52,7 @@ export function mergeConfig(base, override) {
     ...base,
     ...override,
     sdk: { ...base.sdk, ...(override?.sdk ?? {}) },
+    hbuilderx: { ...base.hbuilderx, ...(override?.hbuilderx ?? {}) },
     android: { ...base.android, ...(override?.android ?? {}) },
     projects: { ...(base.projects ?? {}), ...(override?.projects ?? {}) },
   }
@@ -79,16 +86,14 @@ export async function resolveProject(config, nameOrPath, cwd = process.cwd()) {
   }
 
   if (!nameOrPath) {
-    const currentHasManifest = await exists(path.join(absolute, 'src/manifest.json'))
-    if (!currentHasManifest) {
+    if (!(await isUniappProject(absolute))) {
       throw new PackError('当前目录不是 uni-app 项目，请用 --project 指定项目目录或先在配置里登记', EXIT.CONFIG)
     }
     return finalizeProject(config, path.basename(absolute), { projectDir: absolute })
   }
 
-  const hasManifest = await exists(path.join(absolute, 'src/manifest.json'))
-  if (!hasManifest) {
-    throw new PackError(`找不到项目：${nameOrPath}（既不是已登记的项目名，也不是含 src/manifest.json 的目录）`, EXIT.CONFIG)
+  if (!(await isUniappProject(absolute))) {
+    throw new PackError(`找不到项目：${nameOrPath}（既不是已登记的项目名，也不是 uni-app 项目目录）`, EXIT.CONFIG)
   }
   return finalizeProject(config, path.basename(absolute), { projectDir: absolute })
 }
@@ -102,22 +107,30 @@ async function finalizeProject(config, name, entry) {
   const projectDir = path.resolve(String(entry.projectDir ?? process.cwd()))
   const localFile = path.join(projectDir, PROJECT_CONFIG_FILE)
   const local = (await exists(localFile)) ? await readJson(localFile) : {}
+  const layout = await detectProject(projectDir)
+  const detectedType = layout.type === 'unknown' ? 'cli' : layout.type
+  const type = String(local.type ?? entry.type ?? detectedType)
 
   // 输出目录跟着项目走；全局 outputDir 不再参与，避免多项目互相覆盖。
   const outputDir = String(local.outputDir ?? entry.outputDir ?? path.join(projectDir, 'apk'))
 
+  const defaultWebBuild =
+    type === 'hbuilderx'
+      ? { mode: 'hbuilderx', outputDir: 'unpackage/dist/build/app-plus' }
+      : { command: 'pnpm', args: ['run', 'build:app-android'], outputDir: 'dist/build/app' }
+
   const merged = {
     name,
     projectDir,
+    inputDir: layout.inputDir,
     ...entry,
     ...local,
+    type,
     outputDir: path.isAbsolute(outputDir) ? outputDir : path.resolve(projectDir, outputDir),
     signing: { ...(entry.signing ?? {}), ...(local.signing ?? {}) },
     debug: { ...(entry.debug ?? {}), ...(local.debug ?? {}) },
     webBuild: {
-      command: 'pnpm',
-      args: ['run', 'build:app-android'],
-      outputDir: 'dist/build/app',
+      ...defaultWebBuild,
       ...(entry.webBuild ?? {}),
       ...(local.webBuild ?? {}),
     },

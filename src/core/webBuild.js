@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
 import { exists, readJson } from './fsx.js'
+import { runHbuilderxBuild } from './hbuilderx.js'
 import { run } from './process.js'
 
 const REQUIRED = ['manifest.json', 'app-service.js', 'app-config.js', '__uniappview.html']
@@ -8,24 +9,45 @@ const REQUIRED = ['manifest.json', 'app-service.js', 'app-config.js', '__uniappv
 /**
  * @param {any} project
  * @param {import('./logger.js').Logger} logger
+ * @param {{ hbuilderx?: { root: string, version: string } }} [context]
  * @returns {Promise<{ dir: string, manifest: any }>}
  */
-export async function runWebBuild(project, logger) {
+export async function runWebBuild(project, logger, context = {}) {
   const config = project.webBuild ?? {}
-  const command = String(config.command ?? 'pnpm')
-  const args = Array.isArray(config.args) ? config.args : ['run', 'build:app-android']
+  const dir = path.resolve(
+    project.projectDir,
+    String(config.outputDir ?? (project.type === 'hbuilderx' ? 'unpackage/dist/build/app-plus' : 'dist/build/app')),
+  )
 
-  logger.step(`构建前端资源：${command} ${args.join(' ')}`)
-  try {
-    await run(command, args, {
-      cwd: project.projectDir,
-      onLine: (line) => logger.detail(line),
+  if (project.type === 'hbuilderx') {
+    const hbuilderx = context.hbuilderx
+    if (!hbuilderx) {
+      throw new PackError('找不到 HBuilderX，无法编译 HBuilderX 项目', EXIT.WEB_BUILD, {
+        hint: '运行 uni-pack init --hbuilderx <HBuilderX 目录>，或在配置 hbuilderx.root 里填写安装路径',
+      })
+    }
+    await runHbuilderxBuild({
+      root: hbuilderx.root,
+      version: hbuilderx.version,
+      inputDir: String(project.inputDir ?? project.projectDir),
+      outputDir: dir,
+      logger,
     })
-  } catch (error) {
-    throw new PackError('前端构建失败', EXIT.WEB_BUILD, { cause: error })
+  } else {
+    const command = String(config.command ?? 'pnpm')
+    const args = Array.isArray(config.args) ? config.args : ['run', 'build:app-android']
+
+    logger.step(`构建前端资源：${command} ${args.join(' ')}`)
+    try {
+      await run(command, args, {
+        cwd: project.projectDir,
+        onLine: (line) => logger.detail(line),
+      })
+    } catch (error) {
+      throw new PackError('前端构建失败', EXIT.WEB_BUILD, { cause: error })
+    }
   }
 
-  const dir = path.resolve(project.projectDir, String(config.outputDir ?? 'dist/build/app'))
   if (!(await exists(dir))) {
     throw new PackError(`前端产物目录不存在：${dir}`, EXIT.WEB_BUILD)
   }

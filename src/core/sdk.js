@@ -1,7 +1,8 @@
+import os from 'node:os'
 import path from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { PackError, EXIT } from './errors.js'
-import { exists } from './fsx.js'
+import { exists, readText } from './fsx.js'
 import { run } from './process.js'
 
 /** 基础 AAR：与当前线上可运行的自定义基座保持一致 */
@@ -30,6 +31,27 @@ export const BASE_AARS = [
 ]
 
 export const DEBUG_AAR = 'debug-server-release.aar'
+
+/**
+ * manifest.json 的 app-plus.modules 与 SDK/libs 里的 AAR 不是一一对应，常见的做映射，
+ * 认不出的模块给出提示而不是直接失败（很多模块已经并进核心 AAR）。
+ */
+export const MODULE_AARS = {
+  Barcode: ['barcode-release.aar'],
+  Bluetooth: ['Bluetooth-release.aar'],
+  Camera: ['media-release.aar'],
+  VideoPlayer: ['media-release.aar', 'weex_videoplayer-release.aar'],
+  Audio: ['audio-mp3aac-release.aar'],
+  Speech: ['speech-release.aar'],
+  Fingerprint: ['fingerprint-release.aar'],
+  Contacts: ['contacts-release.aar'],
+  Messaging: ['messaging-release.aar'],
+  iBeacon: ['iBeacon-release.aar'],
+  Share: ['share-weixin-release.aar', 'share-qq-release.aar', 'share-sina-release.aar'],
+  Payment: ['payment-weixin-release.aar', 'payment-alipay-release.aar'],
+  OAuth: ['oauth-weixin-release.aar', 'oauth-qq-release.aar', 'oauth-sina-release.aar'],
+  Statistic: ['statistic-release.aar'],
+}
 
 /**
  * 接受用户可能给的各种层级：SDK 根、解压出来的归档根，甚至 HBuilder-Integrate-AS 本身。
@@ -71,24 +93,61 @@ export async function resolveSdkRootInput(input) {
 }
 
 /**
+ * 解析离线 SDK。显式配置优先；没有显式配置时按项目的编译器版本在已安装的 Android-SDK@x.yy 里找。
  * @param {any} config
+ * @param {{ project?: any, version?: string, searchDirs?: string[] }} [options]
  */
-export async function resolveSdk(config) {
-  const configured = String(config.sdk?.root ?? '').trim()
-  const candidate = configured || String(process.env.UNI_SDK_ROOT ?? '').trim()
-  if (!candidate) {
-    throw new PackError('未配置离线 SDK 路径（sdk.root）', EXIT.PREFLIGHT, {
-      hint: '运行 uni-pack init --sdk <目录>，或设置环境变量 UNI_SDK_ROOT，或手工填写 ~/.uniapp-android-cli/config.json',
+export async function resolveSdk(config, options = {}) {
+  const explicit = [options.project?.sdkRoot, config.sdk?.root, process.env.UNI_SDK_ROOT]
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+
+  let invalid = ''
+  for (const candidate of explicit) {
+    const root = await resolveSdkRootInput(candidate)
+    if (root) {
+      return validateSdkRoot(root, config)
+    }
+    invalid = candidate
+  }
+
+  const version = String(options.version ?? '').trim()
+  if (version) {
+    const matched = await findSdkForVersion(config, version, options.searchDirs)
+    if (matched) {
+      return validateSdkRoot(matched, config)
+    }
+    if (invalid) {
+      throw new PackError(`离线 SDK 路径无效：${invalid}`, EXIT.PREFLIGHT, {
+        hint: `未找到与 uni-app ${version} 匹配的其他 SDK；--sdk / sdk.root 应指向包含 HBuilder-Integrate-AS 的 Android-SDK@x.yy 目录`,
+      })
+    }
+    const installed = await listInstalledSdks(config, options.searchDirs)
+    throw new PackError(`未找到与 uni-app ${version} 匹配的离线 SDK`, EXIT.PREFLIGHT, {
+      hint: [
+        `已安装的 SDK：${installed.map((item) => item.version).join(', ') || '(未扫描到)'}`,
+        `请下载 Android-SDK@${version} 放到 ${defaultSdkDirs(config).join(' 或 ')}，`,
+        '或在配置里指定该项目的 sdkRoot / sdk.root',
+      ].join('\n'),
     })
   }
 
-  const root = await resolveSdkRootInput(candidate)
-  if (!root) {
-    throw new PackError(`离线 SDK 路径无效：${candidate}`, EXIT.PREFLIGHT, {
+  if (invalid) {
+    throw new PackError(`离线 SDK 路径无效：${invalid}`, EXIT.PREFLIGHT, {
       hint: 'UNI_SDK_ROOT / --sdk 应指向包含 HBuilder-Integrate-AS 的 Android-SDK@x.yy 目录',
     })
   }
 
+  throw new PackError('未配置离线 SDK 路径（sdk.root）', EXIT.PREFLIGHT, {
+    hint: '运行 uni-pack init --sdk <目录>，或设置环境变量 UNI_SDK_ROOT，或手工填写 ~/.uniapp-android-cli/config.json',
+  })
+}
+
+/**
+ * @param {string} root
+ * @param {any} config
+ */
+async function validateSdkRoot(root, config) {
   const templateRoot = path.join(root, String(config.sdk?.template ?? 'HBuilder-Integrate-AS'))
   const moduleDir = path.join(templateRoot, 'simpleDemo')
   const libsDir = path.join(root, String(config.sdk?.libsDir ?? 'SDK/libs'))
@@ -120,8 +179,119 @@ export async function resolveSdk(config) {
 
 /**
  * @param {any} config
+ * @param {string[]} [extraDirs]
+ * @returns {string[]}
  */
-export async function resolveAndroidTools(config) {
+function defaultSdkDirs(config, extraDirs = []) {
+  return [
+    ...extraDirs,
+    ...(config?.sdk?.searchDirs ?? []),
+    config?.sdk?.root ? path.dirname(path.resolve(String(config.sdk.root))) : '',
+    ...String(process.env.UNI_SDK_DIRS ?? '').split(path.delimiter),
+    'C:/develop/android-sdk/uniapp-Android',
+    path.join(os.homedir(), 'android-sdk', 'uniapp-Android'),
+  ].filter((item) => typeof item === 'string' && item.trim())
+}
+
+/**
+ * 扫描 Android-SDK@x.yy 目录。解压后常见一层同名嵌套，交给 resolveSdkRootInput 处理。
+ * @param {any} config
+ * @param {string[]} [extraDirs]
+ * @returns {Promise<Array<{ version: string, root: string, name: string }>>}
+ */
+export async function listInstalledSdks(config, extraDirs = []) {
+  /** @type {Array<{ version: string, root: string, name: string }>} */
+  const found = []
+  const seen = new Set()
+  for (const dir of defaultSdkDirs(config, extraDirs)) {
+    const entries = await readdir(path.resolve(dir), { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue
+      }
+      const match = /^Android-SDK@(\d+\.\d+)\./i.exec(entry.name)
+      if (!match) {
+        continue
+      }
+      const root = await resolveSdkRootInput(path.join(dir, entry.name))
+      if (!root) {
+        continue
+      }
+      const key = root.toLowerCase()
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      found.push({ version: match[1], root, name: entry.name })
+    }
+  }
+  return found.sort((a, b) => b.name.localeCompare(a.name))
+}
+
+/**
+ * @param {any} config
+ * @param {string} version
+ * @param {string[]} [extraDirs]
+ * @returns {Promise<string>}
+ */
+export async function findSdkForVersion(config, version, extraDirs = []) {
+  const installed = await listInstalledSdks(config, extraDirs)
+  return installed.find((item) => item.version === version)?.root ?? ''
+}
+
+/**
+ * 老版本 SDK 的 compileSdk/buildTools 与新版不同，优先沿用 SDK 自带的模板值。
+ * @param {string} templateRoot
+ * @returns {Promise<{ compileSdkVersion?: number, buildToolsVersion?: string }>}
+ */
+export async function readTemplateDefaults(templateRoot) {
+  const file = path.join(templateRoot, 'simpleDemo', 'build.gradle')
+  if (!(await exists(file))) {
+    return {}
+  }
+  const text = await readText(file)
+  const compileSdk = Number(/compileSdkVersion\s+(\d+)/.exec(text)?.[1])
+  const buildTools = /buildToolsVersion\s+'([^']+)'/.exec(text)?.[1]
+  return {
+    compileSdkVersion: Number.isFinite(compileSdk) ? compileSdk : undefined,
+    buildToolsVersion: buildTools || undefined,
+  }
+}
+
+/**
+ * @param {string} sdkDir
+ * @returns {Promise<string[]>}
+ */
+async function listBuildTools(sdkDir) {
+  const dir = path.join(sdkDir, 'build-tools')
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => compareDotted(b, a))
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ */
+function compareDotted(a, b) {
+  const left = a.split(/[.-]/).map(Number)
+  const right = b.split(/[.-]/).map(Number)
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0)
+    if (diff !== 0) {
+      return diff
+    }
+  }
+  return a.localeCompare(b)
+}
+
+/**
+ * @param {any} config
+ * @param {{ preferredBuildTools?: string }} [options]
+ */
+export async function resolveAndroidTools(config, options = {}) {
   const configured = String(config.android?.sdkDir ?? '').trim()
   const candidate = configured || String(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '').trim()
   if (!candidate) {
@@ -131,7 +301,17 @@ export async function resolveAndroidTools(config) {
   }
   const sdkDir = path.resolve(candidate)
 
-  const buildToolsDir = path.join(sdkDir, 'build-tools', String(config.android?.buildTools ?? '35.0.0'))
+  const installed = await listBuildTools(sdkDir)
+  const wanted = [
+    String(config.android?.buildTools ?? '').trim(),
+    String(options.preferredBuildTools ?? '').trim(),
+  ].filter(Boolean)
+  const buildTools = wanted.find((item) => installed.includes(item)) ?? installed[0]
+  if (!buildTools) {
+    throw new PackError(`Android SDK 下没有 build-tools：${path.join(sdkDir, 'build-tools')}`, EXIT.PREFLIGHT)
+  }
+
+  const buildToolsDir = path.join(sdkDir, 'build-tools', buildTools)
   const suffix = process.platform === 'win32' ? '.bat' : ''
   const apksigner = path.join(buildToolsDir, `apksigner${suffix}`)
   const zipalign = path.join(buildToolsDir, `zipalign${process.platform === 'win32' ? '.exe' : ''}`)
@@ -142,7 +322,7 @@ export async function resolveAndroidTools(config) {
     throw new PackError(`找不到 apksigner：${apksigner}`, EXIT.PREFLIGHT)
   }
 
-  return { sdkDir, buildToolsDir, apksigner, zipalign, adb, keytool }
+  return { sdkDir, buildTools, buildToolsDir, apksigner, zipalign, adb, keytool }
 }
 
 /**

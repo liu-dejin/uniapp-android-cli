@@ -24,6 +24,91 @@ export async function readJson(file) {
 }
 
 /**
+ * HBuilderX 的 manifest.json 是 JSONC：带注释、末尾逗号。字符串里的 // 不能被当成注释。
+ * @param {string} text
+ * @returns {any}
+ */
+export function parseJsonc(text) {
+  const source = text.replace(/^﻿/, '')
+  let output = ''
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]
+    const next = source[index + 1]
+    if (inString) {
+      output += char
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      output += char
+      continue
+    }
+    if (char === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') {
+        index += 1
+      }
+      output += '\n'
+      continue
+    }
+    if (char === '/' && next === '*') {
+      index += 2
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
+        index += 1
+      }
+      index += 1
+      continue
+    }
+    if (char === ',') {
+      let lookahead = index + 1
+      while (lookahead < source.length) {
+        if (/\s/.test(source[lookahead])) {
+          lookahead += 1
+          continue
+        }
+        if (source[lookahead] === '/' && source[lookahead + 1] === '/') {
+          lookahead += 2
+          while (lookahead < source.length && source[lookahead] !== '\n') {
+            lookahead += 1
+          }
+          continue
+        }
+        if (source[lookahead] === '/' && source[lookahead + 1] === '*') {
+          lookahead += 2
+          while (lookahead < source.length && !(source[lookahead] === '*' && source[lookahead + 1] === '/')) {
+            lookahead += 1
+          }
+          lookahead += 2
+          continue
+        }
+        break
+      }
+      if (source[lookahead] === '}' || source[lookahead] === ']') {
+        continue
+      }
+    }
+    output += char
+  }
+  return JSON.parse(output)
+}
+
+/**
+ * @param {string} file
+ * @returns {Promise<any>}
+ */
+export async function readJsonc(file) {
+  return parseJsonc(await readFile(file, 'utf8'))
+}
+
+/**
  * @param {string} file
  * @param {unknown} value
  */
