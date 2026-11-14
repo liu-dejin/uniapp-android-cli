@@ -33,31 +33,47 @@ export async function readProjectManifest(projectDir) {
       return { manifest: await readJson(file), file }
     }
   }
-  throw new PackError(`找不到 manifest.json：${projectDir}（先执行一次前端构建生成 src/manifest.json）`, EXIT.CONFIG)
+  throw new PackError(`找不到 manifest.json：${projectDir}`, EXIT.CONFIG, {
+    hint: '在 uni-app 项目根目录确认存在 src/manifest.json；若只有构建产物，请先执行一次前端构建',
+  })
 }
 
 /**
+ * @param {...any} values
+ */
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') {
+      return value
+    }
+  }
+  return undefined
+}
+
+/**
+ * manifest 是唯一来源，fallbacks 只在该字段缺失时兜底。
+ * 配置里的同名字段可能是 init 时的快照，直接覆盖会让改过 manifest 的项目静默打旧版本。
  * @param {any} manifest
- * @param {any} [overrides]
+ * @param {any} [fallbacks]
  * @returns {ProjectManifest}
  */
-export function normalizeManifest(manifest, overrides = {}) {
+export function normalizeManifest(manifest, fallbacks = {}) {
   const distribute = manifest?.['app-plus']?.distribute ?? {}
   const android = distribute.android ?? {}
-  const versionCodeRaw = manifest?.versionCode ?? manifest?.version?.code ?? 1
+  const manifestAbi = Array.isArray(android.abiFilters) && android.abiFilters.length > 0 ? android.abiFilters : undefined
 
   const permissions = extractPermissionNames(android.permissions ?? [])
   const features = extractFeatureNames(android.permissions ?? [])
 
   const result = {
-    appid: String(overrides.appid ?? manifest?.appid ?? ''),
-    name: String(overrides.name ?? manifest?.name ?? ''),
-    versionName: String(overrides.versionName ?? manifest?.versionName ?? '1.0.0'),
-    versionCode: Number(overrides.versionCode ?? versionCodeRaw),
-    packageName: String(overrides.package ?? android.packagename ?? ''),
-    abiFilters: overrides.abiFilters ?? android.abiFilters ?? ['armeabi-v7a', 'arm64-v8a'],
-    minSdkVersion: Number(overrides.minSdkVersion ?? android.minSdkVersion ?? 21),
-    targetSdkVersion: Number(overrides.targetSdkVersion ?? android.targetSdkVersion ?? 30),
+    appid: String(firstPresent(manifest?.appid, fallbacks.appid, '')),
+    name: String(firstPresent(manifest?.name, fallbacks.name, '')),
+    versionName: String(firstPresent(manifest?.versionName, fallbacks.versionName, '1.0.0')),
+    versionCode: Number(firstPresent(manifest?.versionCode, manifest?.version?.code, fallbacks.versionCode, 1)),
+    packageName: String(firstPresent(android.packagename, fallbacks.package, '')),
+    abiFilters: firstPresent(manifestAbi, fallbacks.abiFilters, ['armeabi-v7a', 'arm64-v8a']),
+    minSdkVersion: Number(firstPresent(android.minSdkVersion, fallbacks.minSdkVersion, 21)),
+    targetSdkVersion: Number(firstPresent(android.targetSdkVersion, fallbacks.targetSdkVersion, 30)),
     permissions,
     features,
     modules: Object.keys(manifest?.['app-plus']?.modules ?? {}),

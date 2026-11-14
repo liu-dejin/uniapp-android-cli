@@ -30,8 +30,10 @@ export async function doctorCommand(options) {
 
   const config = await loadConfig()
 
+  let sdkRoot = ''
   try {
     const sdk = await resolveSdk(config)
+    sdkRoot = sdk.root
     add('离线 SDK', true, sdk.root)
   } catch (error) {
     add('离线 SDK', false, error instanceof Error ? error.message : String(error))
@@ -66,7 +68,7 @@ export async function doctorCommand(options) {
     add('项目', true, `${resolved.name} ${resolved.appid} v${resolved.versionName}(${resolved.versionCode})`)
 
     const compiler = await readProjectCompilerVersion(project.projectDir)
-    const sdkVersion = await readSdkVersion(String(config.sdk?.root ?? ''))
+    const sdkVersion = sdkRoot ? await readSdkVersion(sdkRoot) : null
     const versionCheck = assertVersionMatch({ compiler, sdk: sdkVersion })
     add(
       '版本一致性',

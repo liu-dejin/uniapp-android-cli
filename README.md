@@ -11,8 +11,31 @@
 
 - Node ≥ 20（Windows 为主）
 - DCloud Android 离线 SDK（版本需与项目的 `@dcloudio/*` 一致）
-- Android SDK（build-tools 含 apksigner / zipalign，platform-tools 含 adb）
+- Android SDK（build-tools 含 apksigner，platform-tools 含 adb）
 - JDK 17+
+
+首次使用建议先设好环境变量，`init` 探测不到时会按提示使用：
+
+| 变量 | 指向 |
+| --- | --- |
+| `UNI_SDK_ROOT` | 解压后包含 `HBuilder-Integrate-AS` 的目录 |
+| `ANDROID_HOME` | Android SDK 根目录（也认 `ANDROID_SDK_ROOT`） |
+| `JAVA_HOME` | JDK 17+ 根目录 |
+
+## 安装
+
+```bash
+# 方式一：源码开发
+npm install
+npm link
+
+# 方式二：打成 tarball 分发给同事
+npm run pack:cli
+npm install -g ./uniapp-android-cli-0.1.0.tgz
+
+# 方式三：不安装，直接跑
+node bin/uni-pack.js doctor -p <项目>
+```
 
 ## 快速开始
 
@@ -29,12 +52,13 @@ uni-pack build  -p ../YFB_PROJECT/PRO_DIS_V2 --mode release
 ## 命令
 
 ```bash
-uni-pack init    [-p <dir>] [--appkey <key>] [--sdk <dir>] [--keystore <file>]
+uni-pack init    [-p <dir>] [--appkey <key>] [--sdk <dir>] [--android-sdk <dir>] [--jdk <dir>] [--keystore <file>]
 uni-pack doctor  [-p <dir>] [--json]
 uni-pack devices
 uni-pack build   [-p <dir>] [--mode release|debug] [--skip-web] [--out <dir>] [--install] [--device <serial>] [--offline]
 uni-pack wgt     [-p <dir>] [--skip-web] [--out <dir>]
-uni-pack debug   [-p <dir>] [--install] [--build] [--push] [--logs] [--port 8787] [--device <serial>]
+uni-pack debug   [-p <dir>] [--install] [--build] [--push] [--logs] [--device <serial>]
+uni-pack version
 ```
 
 ## 配置
@@ -45,10 +69,10 @@ uni-pack debug   [-p <dir>] [--install] [--build] [--push] [--logs] [--port 8787
 {
   "sdk": { "root": "<离线 SDK 根目录>" },
   "android": { "sdkDir": "<Android SDK>", "buildTools": "35.0.0", "jdk": "" },
-  "outputDir": "<APK 输出目录>",
   "projects": {
     "pro-dis-v2": {
       "projectDir": "<uni-app 项目>",
+      "outputDir": "<APK 输出目录，默认 <projectDir>/apk>",
       "appid": "__UNI__XXXXXX",
       "package": "com.example.app",
       "appKey": "<DCloud AppKey>",
@@ -64,6 +88,9 @@ uni-pack debug   [-p <dir>] [--install] [--build] [--push] [--logs] [--port 8787
   }
 }
 ```
+
+`outputDir` 跟着项目走，多项目不会互相覆盖；不填时默认 `<projectDir>/apk`。
+`uni-pack.config.json` 只覆盖项目级字段（appKey、signing、webBuild、outputDir 等），SDK 与 Android SDK 路径请写在用户级配置或环境变量里。
 
 **密码不落盘**：优先命令行 `--store-password/--key-password`，其次环境变量，其次 `keystore.properties`。
 
@@ -98,6 +125,8 @@ uni-pack debug -p <dir> --push --logs   # 重建基座、安装、启动并输�
 | uni-app 编译器 | 项目 `node_modules/@dcloudio/uni-app/package.json` | `3.0.0-5030420261029002` → **5.34** |
 | Android 离线 SDK | SDK 目录名 | `Android-SDK@5.34.82692` → **5.34** |
 | HBuilderX | 仅用 HBuilderX 编译/云打包时 | 5.34 |
+
+包名、版本号、名称与 min/target SDK 一律以 `src/manifest.json` 为准；配置里的同名字段只在该字段缺失时兜底，项目升版后不需要重跑 `init`。
 
 编码规则：取版本号横线后的前 5 位 `50304`，依次是主、次、补丁 → 5.3.4 → 显示为 `5.34`；`40805` → 4.8.5 → `4.85`。
 

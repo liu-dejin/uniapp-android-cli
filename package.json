@@ -7,13 +7,19 @@
   "bin": {
     "uni-pack": "bin/uni-pack.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test \"tests/unit/**/*.test.js\"",
-    "link": "npm link"
+    "link": "npm link",
+    "pack:cli": "npm pack"
   },
   "dependencies": {
     "yazl": "^3.3.1"

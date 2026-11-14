@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readdir } from 'node:fs/promises'
 import { PackError, EXIT } from './errors.js'
 import { exists } from './fsx.js'
 import { run } from './process.js'
@@ -31,13 +32,60 @@ export const BASE_AARS = [
 export const DEBUG_AAR = 'debug-server-release.aar'
 
 /**
+ * 接受用户可能给的各种层级：SDK 根、解压出来的归档根，甚至 HBuilder-Integrate-AS 本身。
+ * @param {string} input
+ * @returns {Promise<string>} 含 HBuilder-Integrate-AS 的目录；找不到返回空串
+ */
+export async function resolveSdkRootInput(input) {
+  const value = String(input ?? '').trim()
+  if (!value) {
+    return ''
+  }
+  const root = path.resolve(value)
+  if (path.basename(root) === 'HBuilder-Integrate-AS') {
+    return path.dirname(root)
+  }
+  if (await exists(path.join(root, 'HBuilder-Integrate-AS'))) {
+    return root
+  }
+  const nested = path.join(root, path.basename(root))
+  if (await exists(path.join(nested, 'HBuilder-Integrate-AS'))) {
+    return nested
+  }
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+  const candidates = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('Android-SDK@'))
+    .map((entry) => path.join(root, entry.name))
+    .sort()
+    .reverse()
+  for (const candidate of candidates) {
+    if (await exists(path.join(candidate, 'HBuilder-Integrate-AS'))) {
+      return candidate
+    }
+    const deep = path.join(candidate, path.basename(candidate))
+    if (await exists(path.join(deep, 'HBuilder-Integrate-AS'))) {
+      return deep
+    }
+  }
+  return ''
+}
+
+/**
  * @param {any} config
  */
 export async function resolveSdk(config) {
-  const root = path.resolve(String(config.sdk?.root ?? ''))
-  if (!config.sdk?.root) {
+  const configured = String(config.sdk?.root ?? '').trim()
+  const candidate = configured || String(process.env.UNI_SDK_ROOT ?? '').trim()
+  if (!candidate) {
     throw new PackError('未配置离线 SDK 路径（sdk.root）', EXIT.PREFLIGHT, {
-      hint: '运行 uni-pack init，或手工填写 ~/.uniapp-android-cli/config.json',
+      hint: '运行 uni-pack init --sdk <目录>，或设置环境变量 UNI_SDK_ROOT，或手工填写 ~/.uniapp-android-cli/config.json',
+    })
+  }
+
+  const root = await resolveSdkRootInput(candidate)
+  if (!root) {
+    throw new PackError(`离线 SDK 路径无效：${candidate}`, EXIT.PREFLIGHT, {
+      hint: 'UNI_SDK_ROOT / --sdk 应指向包含 HBuilder-Integrate-AS 的 Android-SDK@x.yy 目录',
     })
   }
 
@@ -74,10 +122,14 @@ export async function resolveSdk(config) {
  * @param {any} config
  */
 export async function resolveAndroidTools(config) {
-  const sdkDir = path.resolve(String(config.android?.sdkDir ?? ''))
-  if (!config.android?.sdkDir) {
-    throw new PackError('未配置 Android SDK 路径（android.sdkDir）', EXIT.PREFLIGHT)
+  const configured = String(config.android?.sdkDir ?? '').trim()
+  const candidate = configured || String(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '').trim()
+  if (!candidate) {
+    throw new PackError('未配置 Android SDK 路径（android.sdkDir）', EXIT.PREFLIGHT, {
+      hint: '运行 uni-pack init --android-sdk <目录>，或设置环境变量 ANDROID_HOME',
+    })
   }
+  const sdkDir = path.resolve(candidate)
 
   const buildToolsDir = path.join(sdkDir, 'build-tools', String(config.android?.buildTools ?? '35.0.0'))
   const suffix = process.platform === 'win32' ? '.bat' : ''

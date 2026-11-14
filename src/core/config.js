@@ -22,7 +22,6 @@ export function defaultConfig() {
       buildTools: '35.0.0',
       jdk: '',
     },
-    outputDir: path.join(os.homedir(), 'Desktop'),
     workDir: path.join(CONFIG_DIR, 'work'),
     projects: {},
   }
@@ -104,11 +103,15 @@ async function finalizeProject(config, name, entry) {
   const localFile = path.join(projectDir, PROJECT_CONFIG_FILE)
   const local = (await exists(localFile)) ? await readJson(localFile) : {}
 
+  // 输出目录跟着项目走；全局 outputDir 不再参与，避免多项目互相覆盖。
+  const outputDir = String(local.outputDir ?? entry.outputDir ?? path.join(projectDir, 'apk'))
+
   const merged = {
     name,
     projectDir,
     ...entry,
     ...local,
+    outputDir: path.isAbsolute(outputDir) ? outputDir : path.resolve(projectDir, outputDir),
     signing: { ...(entry.signing ?? {}), ...(local.signing ?? {}) },
     debug: { ...(entry.debug ?? {}), ...(local.debug ?? {}) },
     webBuild: {

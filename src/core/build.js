@@ -138,7 +138,7 @@ export async function buildProject(input) {
   const baseName = apkBaseName(project.name ?? resolved.name, resolved.versionName, resolved.versionCode)
   const published = await publishApk({
     apk,
-    outputDir: path.resolve(options.out ?? config.outputDir),
+    outputDir: path.resolve(String(options.out ?? project.outputDir)),
     baseName,
     mode,
     workDir: workRoot,
