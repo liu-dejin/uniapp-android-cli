@@ -3,8 +3,9 @@ import http from 'node:http'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { buildProject } from '../core/build.js'
-import { installApk, listDevices, pickDevice, reversePort, startApp } from '../core/adb.js'
+import { installApk, isInstalled, listDevices, pickDevice, reversePort, startApp } from '../core/adb.js'
 import { loadConfig, resolveProject } from '../core/config.js'
+import { PackError, EXIT } from '../core/errors.js'
 import { exists } from '../core/fsx.js'
 import { Logger } from '../core/logger.js'
 import { apkBaseName } from '../core/output.js'
@@ -76,6 +77,12 @@ export async function debugCommand(options) {
  */
 async function pushResources(input) {
   const { project, resolved, logger, options, adb, serial, port, activity } = input
+
+  if (!(await isInstalled(adb, serial, resolved.packageName))) {
+    throw new PackError(`设备上没有安装 ${resolved.packageName}`, EXIT.DEVICE, {
+      hint: '先执行 uni-pack debug --install 安装自定义基座',
+    })
+  }
 
   let resourcesDir = path.resolve(project.projectDir, String(project.webBuild?.outputDir ?? 'dist/build/app'))
   if (options.skipWeb) {

@@ -47,10 +47,22 @@ export function pickDevice(devices, serial) {
  * @param {string} serial
  */
 export async function installApk(adb, apk, serial) {
-  const { stdout, stderr } = await run(adb, ['-s', serial, 'install', '-r', apk], { allowFailure: false })
-  if (/Failure/i.test(stdout + stderr)) {
-    throw new PackError(`安装失败：${(stdout + stderr).trim()}`, EXIT.DEVICE)
+  const { code, stdout, stderr } = await run(adb, ['-s', serial, 'install', '-r', apk], { allowFailure: true })
+  if (code !== 0 || /Failure/i.test(stdout + stderr)) {
+    throw new PackError(`安装失败：${(stdout + stderr).trim().split('\n').slice(-3).join('\n')}`, EXIT.DEVICE)
   }
+}
+
+/**
+ * @param {string} adb
+ * @param {string} serial
+ * @param {string} packageName
+ */
+export async function isInstalled(adb, serial, packageName) {
+  const { stdout } = await run(adb, ['-s', serial, 'shell', 'pm', 'list', 'packages', packageName], {
+    allowFailure: true,
+  })
+  return stdout.split(/\r?\n/).some((line) => line.trim() === `package:${packageName}`)
 }
 
 /**
@@ -61,7 +73,16 @@ export async function installApk(adb, apk, serial) {
  */
 export async function startApp(adb, packageName, activity, serial) {
   await run(adb, ['-s', serial, 'shell', 'am', 'force-stop', packageName], { allowFailure: true })
-  await run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', `${packageName}/${activity}`], { allowFailure: false })
+  const { code, stdout, stderr } = await run(
+    adb,
+    ['-s', serial, 'shell', 'am', 'start', '-n', `${packageName}/${activity}`],
+    { allowFailure: true },
+  )
+  if (code !== 0) {
+    throw new PackError(`启动应用失败：${(stderr || stdout).trim()}`, EXIT.DEVICE, {
+      hint: '基座未安装？先执行 uni-pack debug --install',
+    })
+  }
 }
 
 /**
