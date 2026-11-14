@@ -20,6 +20,7 @@ const SPECS = {
     device: { type: 'string' },
     offline: { type: 'boolean' },
     'keep-workdir': { type: 'boolean' },
+    'skip-version-check': { type: 'boolean' },
     'store-password': { type: 'string' },
     'key-password': { type: 'string' },
   },

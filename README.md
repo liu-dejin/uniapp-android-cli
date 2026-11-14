@@ -89,6 +89,30 @@ uni-pack debug -p <dir> --push --logs   # 重建基座、安装、启动并输�
 
 > 基座与正式包同包名同签名，安装基座会覆盖设备上的正式包。
 
+## 版本必须对齐
+
+真正必须一致的是「uni-app 编译器」和「离线 SDK」；HBuilderX 只在用它的编译器或云打包时才相关。
+
+| 角色 | 版本来源 | 示例 |
+| --- | --- | --- |
+| uni-app 编译器 | 项目 `node_modules/@dcloudio/uni-app/package.json` | `3.0.0-5030420261029002` → **5.34** |
+| Android 离线 SDK | SDK 目录名 | `Android-SDK@5.34.82692` → **5.34** |
+| HBuilderX | 仅用 HBuilderX 编译/云打包时 | 5.34 |
+
+编码规则：取版本号横线后的前 5 位 `50304`，依次是主、次、补丁 → 5.3.4 → 显示为 `5.34`；`40805` → 4.8.5 → `4.85`。
+
+不一致时 App 启动会弹「编译版本与手机端 SDK 版本不匹配」，严重时白屏。两种解决办法：
+
+```bash
+# 方案一：升级项目依赖到 SDK 对应版本，然后重新安装、重建基座与正式包
+npx @dcloudio/uvm@latest
+pnpm install
+
+# 方案二：下载与当前编译器同版本的 Android-SDK@x.yy，改配置 sdk.root 指向它
+```
+
+`uni-pack doctor` 会显示两边的版本并标红，`uni-pack build` 会直接拦下（可用 `--skip-version-check` 临时跳过）。
+
 ## 限制
 
 - 仅支持普通 uni-app（Vue 3），不含 uni-app x / vapor / iOS。

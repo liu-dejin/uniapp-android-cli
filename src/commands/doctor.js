@@ -6,6 +6,7 @@ import { normalizeManifest, readProjectManifest } from '../core/project.js'
 import { listDevices } from '../core/adb.js'
 import { resolveAndroidTools, resolveJavaHome, resolveSdk } from '../core/sdk.js'
 import { resolveSigning } from '../core/signing.js'
+import { assertVersionMatch, readProjectCompilerVersion, readSdkVersion } from '../core/version.js'
 
 /**
  * @param {Record<string, any>} options
@@ -63,6 +64,17 @@ export async function doctorCommand(options) {
       versionCode: project.versionCode,
     })
     add('项目', true, `${resolved.name} ${resolved.appid} v${resolved.versionName}(${resolved.versionCode})`)
+
+    const compiler = await readProjectCompilerVersion(project.projectDir)
+    const sdkVersion = await readSdkVersion(String(config.sdk?.root ?? ''))
+    const versionCheck = assertVersionMatch({ compiler, sdk: sdkVersion })
+    add(
+      '版本一致性',
+      versionCheck.ok,
+      `uni-app ${compiler ?? '未知'} / 离线 SDK ${sdkVersion ?? '未知'}${
+        versionCheck.ok ? '' : '（必须一致，见 uni-pack build 的提示）'
+      }`,
+    )
 
     try {
       const signing = await resolveSigning(project, options)

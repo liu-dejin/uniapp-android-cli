@@ -10,6 +10,7 @@ import { prepareTemplate } from './patch/template.js'
 import { normalizeManifest, readProjectManifest } from './project.js'
 import { BASE_AARS, DEBUG_AAR, resolveAndroidTools, resolveJavaHome, resolveSdk } from './sdk.js'
 import { resolveSigning } from './signing.js'
+import { assertVersionMatch, readProjectCompilerVersion, readSdkVersion, versionMismatchError } from './version.js'
 import { runWebBuild } from './webBuild.js'
 import { apkBaseName, findApk, publishApk } from './output.js'
 
@@ -57,6 +58,21 @@ export async function buildProject(input) {
 
   const signing = await resolveSigning(project, options)
   const sdk = await resolveSdk(config)
+
+  const versions = {
+    compiler: await readProjectCompilerVersion(project.projectDir),
+    sdk: await readSdkVersion(sdk.root),
+  }
+  const versionCheck = assertVersionMatch(versions)
+  if (!versionCheck.ok && !options.skipVersionCheck) {
+    throw versionMismatchError(versions)
+  }
+  if (versionCheck.ok) {
+    logger.info(`版本一致：uni-app ${versions.compiler} / SDK ${versions.sdk}`)
+  } else {
+    logger.warn(`版本不一致：uni-app ${versions.compiler ?? '未知'} / SDK ${versions.sdk ?? '未知'}（已跳过检查）`)
+  }
+
   const tools = await resolveAndroidTools(config)
   const javaHome = await resolveJavaHome(config)
   const workRoot = path.join(config.workDir, sanitize(project.name ?? 'project'))
