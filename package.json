@@ -1,0 +1,25 @@
+{
+  "name": "uniapp-android-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "离线打包 uni-app Android 应用：正式包、自定义基座、wgt、设备调试",
+  "bin": {
+    "uni-pack": "bin/uni-pack.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/unit",
+    "link": "npm link"
+  },
+  "dependencies": {
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

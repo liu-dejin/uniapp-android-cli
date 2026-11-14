@@ -1,0 +1,4 @@
+node_modules
+work
+*.local
+.DS_Store
