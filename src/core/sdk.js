@@ -289,9 +289,9 @@ function compareDotted(a, b) {
 
 /**
  * @param {any} config
- * @param {{ preferredBuildTools?: string }} [options]
+ * @returns {string}
  */
-export async function resolveAndroidTools(config, options = {}) {
+function resolveAndroidSdkDir(config) {
   const configured = String(config.android?.sdkDir ?? '').trim()
   const candidate = configured || String(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '').trim()
   if (!candidate) {
@@ -299,7 +299,34 @@ export async function resolveAndroidTools(config, options = {}) {
       hint: '运行 uni-pack init --android-sdk <目录>，或设置环境变量 ANDROID_HOME',
     })
   }
-  const sdkDir = path.resolve(candidate)
+  return path.resolve(candidate)
+}
+
+/**
+ * 只依赖 adb 的命令（设备列表/配对）不需要 JDK 与 build-tools。
+ * @param {any} config
+ * @returns {Promise<string>}
+ */
+export async function resolveAdbPath(config) {
+  const adb = path.join(
+    resolveAndroidSdkDir(config),
+    'platform-tools',
+    `adb${process.platform === 'win32' ? '.exe' : ''}`,
+  )
+  if (!(await exists(adb))) {
+    throw new PackError(`找不到 adb：${adb}`, EXIT.PREFLIGHT, {
+      hint: '在 Android SDK Manager 里安装 Platform-Tools',
+    })
+  }
+  return adb
+}
+
+/**
+ * @param {any} config
+ * @param {{ preferredBuildTools?: string }} [options]
+ */
+export async function resolveAndroidTools(config, options = {}) {
+  const sdkDir = resolveAndroidSdkDir(config)
 
   const installed = await listBuildTools(sdkDir)
   const wanted = [

@@ -24,6 +24,15 @@ const SPECS = {
   },
   doctor: { ...COMMON },
   devices: { ...COMMON },
+  device: {
+    ...COMMON,
+    timeout: { type: 'string' },
+    service: { type: 'string' },
+    code: { type: 'string' },
+    port: { type: 'string' },
+    device: { type: 'string' },
+    connect: { type: 'boolean' },
+  },
   build: {
     ...COMMON,
     mode: { type: 'string' },
@@ -75,8 +84,9 @@ export async function main(argv) {
 
   let options
   try {
-    const { values } = parseArgs({ args: rest, options: spec, allowPositionals: true })
+    const { values, positionals } = parseArgs({ args: rest, options: spec, allowPositionals: true })
     options = normalize(values)
+    options.positionals = positionals
     options.cwd = process.cwd()
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
@@ -94,6 +104,9 @@ export async function main(argv) {
     } else if (command === 'devices') {
       const { devicesCommand } = await import('./commands/devices.js')
       await devicesCommand(options)
+    } else if (command === 'device') {
+      const { deviceCommand } = await import('./commands/device.js')
+      await deviceCommand(options)
     } else if (command === 'build') {
       const { buildCommand } = await import('./commands/build.js')
       await buildCommand(options)
@@ -140,16 +153,24 @@ function printHelp() {
   uni-pack init    [-p <dir>] [--appkey <key>] [--package <包名>] [--sdk <dir>] [--hbuilderx <dir>]
                    [--android-sdk <dir>] [--jdk <dir>]
   uni-pack doctor  [-p <dir>] [--json]                环境自检
-  uni-pack devices                                    列出设备
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
                    [--skip-web] [--out <dir>] [--offline]
   uni-pack wgt     [-p <dir>] [--skip-web] [--out <dir>]
   uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
+  uni-pack devices                                    列出设备（同 device list）
+  uni-pack device [list]                              列出 USB / 无线设备
+  uni-pack device pair [--timeout 120] [--service <名>] [--code <6位>]
+                                                      终端显示二维码，手机扫码配对（Android 11+）
+  uni-pack device pair <ip:port> <配对码>             手动配对（手机显示配对码时用）
+  uni-pack device connect <ip[:port]>                 连接无线设备（默认端口 5555）
+  uni-pack device disconnect [ip[:port]]              断开无线设备
+  uni-pack device tcpip [--port 5555] [--connect]     USB 设备开启无线调试
+  uni-pack device mdns                                列出 mDNS 发现的无线调试服务
   uni-pack version                                    显示版本
 
 支持两种项目：
-  CLI 项目       src/manifest.json，用项目的 pnpm build:app-android 编译
-  HBuilderX 项目 根目录 manifest.json，用 HBuilderX 自带编译器编译
+  CLI 项目       src/manifest.json，按项目脚本选 build:app-android / build:app-plus
+  HBuilderX 项目 根目录 manifest.json，用 HBuilderX 自带编译器（Vue 2 / Vue 3）
 
 环境变量：
   UNI_SDK_ROOT    含 HBuilder-Integrate-AS 的离线 SDK 目录

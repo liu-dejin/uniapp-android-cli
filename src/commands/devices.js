@@ -1,7 +1,7 @@
 import { loadConfig } from '../core/config.js'
 import { listDevices } from '../core/adb.js'
 import { Logger } from '../core/logger.js'
-import { resolveAndroidTools } from '../core/sdk.js'
+import { resolveAdbPath } from '../core/sdk.js'
 
 /**
  * @param {Record<string, any>} options
@@ -9,8 +9,8 @@ import { resolveAndroidTools } from '../core/sdk.js'
 export async function devicesCommand(options) {
   const logger = new Logger(options)
   const config = await loadConfig()
-  const tools = await resolveAndroidTools(config)
-  const devices = await listDevices(tools.adb)
+  const adb = await resolveAdbPath(config)
+  const devices = await listDevices(adb)
 
   if (devices.length === 0) {
     logger.warn('没有检测到设备')
