@@ -26,7 +26,8 @@ export async function applyAssets(context) {
   await copyTree(context.dataDir, assetsData)
 
   const wwwDir = path.join(appsDir, context.appid, 'www')
-  await copyTree(context.resourcesDir, wwwDir)
+  // UTS 插件的 utssdk 是编译期资源，HBuilderX 的产物不会打进 www
+  await copyTree(context.resourcesDir, wwwDir, (relative) => /^uni_modules\/[^/]+\/utssdk(\/|$)/.test(relative))
   await writeControlFile(assetsData, context)
   await patchStrings(mainDir, context.appName)
   await applyIcons(mainDir, context.projectDir, context.manifest)

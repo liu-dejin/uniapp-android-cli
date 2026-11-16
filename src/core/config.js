@@ -99,6 +99,26 @@ export async function resolveProject(config, nameOrPath, cwd = process.cwd()) {
 }
 
 /**
+ * CLI 的 Vue 2 项目通常用 build:app-plus（产物 dist/build/app-plus），
+ * Vue 3 项目用 build:app-android（产物 dist/build/app）。
+ * @param {string} type
+ * @param {string} projectDir
+ * @returns {Promise<any>}
+ */
+export async function resolveDefaultWebBuild(type, projectDir) {
+  if (type === 'hbuilderx') {
+    return { mode: 'hbuilderx', outputDir: 'unpackage/dist/build/app-plus' }
+  }
+  const packageFile = path.join(projectDir, 'package.json')
+  const pkg = (await exists(packageFile)) ? await readJson(packageFile).catch(() => ({})) : {}
+  const scripts = pkg.scripts ?? {}
+  if (!scripts['build:app-android'] && scripts['build:app-plus']) {
+    return { command: 'pnpm', args: ['run', 'build:app-plus'], outputDir: 'dist/build/app-plus' }
+  }
+  return { command: 'pnpm', args: ['run', 'build:app-android'], outputDir: 'dist/build/app' }
+}
+
+/**
  * @param {any} config
  * @param {string} name
  * @param {any} entry
@@ -114,10 +134,7 @@ async function finalizeProject(config, name, entry) {
   // 输出目录跟着项目走；全局 outputDir 不再参与，避免多项目互相覆盖。
   const outputDir = String(local.outputDir ?? entry.outputDir ?? path.join(projectDir, 'apk'))
 
-  const defaultWebBuild =
-    type === 'hbuilderx'
-      ? { mode: 'hbuilderx', outputDir: 'unpackage/dist/build/app-plus' }
-      : { command: 'pnpm', args: ['run', 'build:app-android'], outputDir: 'dist/build/app' }
+  const defaultWebBuild = await resolveDefaultWebBuild(type, projectDir)
 
   const merged = {
     name,

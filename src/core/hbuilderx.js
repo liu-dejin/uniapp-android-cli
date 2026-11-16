@@ -5,8 +5,28 @@ import { PackError, EXIT } from './errors.js'
 import { exists, readJson } from './fsx.js'
 import { run } from './process.js'
 
-const COMPILER_DIR = path.join('plugins', 'uniapp-cli-vite')
-const COMPILER_ENTRY = path.join('node_modules', '@dcloudio', 'vite-plugin-uni', 'bin', 'uni.js')
+const VUE3_COMPILER = {
+  vueVersion: 3,
+  dir: path.join('plugins', 'uniapp-cli-vite'),
+  entry: path.join('node_modules', '@dcloudio', 'vite-plugin-uni', 'bin', 'uni.js'),
+  args: ['build', '-p', 'app'],
+  platform: 'app',
+}
+const VUE2_COMPILER = {
+  vueVersion: 2,
+  dir: path.join('plugins', 'uniapp-cli'),
+  entry: path.join('bin', 'uniapp-cli.js'),
+  args: [],
+  platform: 'app-plus',
+}
+
+/**
+ * Vue 2 与 Vue 3 的 HBuilderX 编译入口不同，按 manifest.vueVersion 选择。
+ * @param {number | string | undefined} vueVersion
+ */
+export function selectHbuilderxCompiler(vueVersion) {
+  return Number(vueVersion) === 2 ? VUE2_COMPILER : VUE3_COMPILER
+}
 
 /**
  * about/package.json 的版本形如 5.34.2026102909；编译器写进 manifest 的是前两段。
@@ -26,7 +46,10 @@ async function probeInstall(dir) {
   const dirs = [dir, path.join(dir, 'HBuilderX')]
   for (const candidate of dirs) {
     const about = path.join(candidate, 'plugins', 'about', 'package.json')
-    if (!(await exists(about)) || !(await exists(path.join(candidate, COMPILER_DIR)))) {
+    const hasCompiler =
+      (await exists(path.join(candidate, VUE3_COMPILER.dir))) ||
+      (await exists(path.join(candidate, VUE2_COMPILER.dir)))
+    if (!(await exists(about)) || !hasCompiler) {
       continue
     }
     const pkg = await readJson(about).catch(() => ({}))
@@ -177,22 +200,24 @@ export async function resolveHbuilderx(config, options = {}) {
  * @param {string} options.version
  * @param {string} options.inputDir
  * @param {string} options.outputDir
+ * @param {number | string} [options.vueVersion] 2 或 3；默认 3
  * @param {import('./logger.js').Logger} options.logger
  */
 export async function runHbuilderxBuild(options) {
   const { root, version, inputDir, outputDir, logger } = options
-  const pluginDir = path.join(root, COMPILER_DIR)
-  const entry = path.join(pluginDir, COMPILER_ENTRY)
+  const compiler = selectHbuilderxCompiler(options.vueVersion ?? 3)
+  const pluginDir = path.join(root, compiler.dir)
+  const entry = path.join(pluginDir, compiler.entry)
   if (!(await exists(entry))) {
-    throw new PackError(`HBuilderX 缺少 uni-app 编译器：${entry}`, EXIT.WEB_BUILD, {
-      hint: 'HBuilderX 版本过旧或安装不完整，请升级 HBuilderX 后重试',
+    throw new PackError(`HBuilderX 缺少 Vue ${compiler.vueVersion} 编译器：${entry}`, EXIT.WEB_BUILD, {
+      hint: `确认 manifest.json 的 vueVersion 是否正确，或升级 HBuilderX 后重试`,
     })
   }
 
   const node = await resolveNode(root)
-  logger.step(`构建前端资源：HBuilderX ${version}`)
+  logger.step(`构建前端资源：HBuilderX ${version}（Vue ${compiler.vueVersion}）`)
   try {
-    await run(node, [entry, 'build', '-p', 'app'], {
+    await run(node, [entry, ...compiler.args], {
       cwd: pluginDir,
       env: {
         HX_Version: version,
@@ -201,7 +226,7 @@ export async function runHbuilderxBuild(options) {
         UNI_CLI_CONTEXT: pluginDir,
         UNI_INPUT_DIR: inputDir,
         UNI_OUTPUT_DIR: outputDir,
-        UNI_PLATFORM: 'app',
+        UNI_PLATFORM: compiler.platform,
         NODE_ENV: 'production',
       },
       onLine: (line) => logger.detail(line),

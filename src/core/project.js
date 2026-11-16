@@ -96,6 +96,7 @@ export async function readProjectManifest(projectDir) {
 /**
  * HBuilderX 项目常常不在 manifest.json 里写包名（云打包时单独填），
  * 项目根的 AndroidManifest.xml 是最后可用的兜底来源。
+ * HBuilderX 实际打包会把包名转小写，AppKey 又按包名绑定，这里保持一致。
  * @param {string} projectDir
  * @returns {Promise<string>}
  */
@@ -104,7 +105,48 @@ export async function readProjectPackage(projectDir) {
   if (!(await exists(file))) {
     return ''
   }
-  return /package="([^"]+)"/.exec(await readText(file))?.[1] ?? ''
+  const value = /package="([^"]+)"/.exec(await readText(file))?.[1] ?? ''
+  return value.toLowerCase()
+}
+
+/**
+ * HBuilderX 的 Vue 3 项目会在 manifest 里写 "vueVersion": "3"；没有该字段按 Vue 2 处理。
+ * @param {any} manifest
+ * @returns {2 | 3}
+ */
+export function readVueVersion(manifest) {
+  return String(manifest?.vueVersion ?? '').trim() === '3' ? 3 : 2
+}
+
+/**
+ * CLI 项目通常不在 manifest 写 vueVersion，改从 package.json 的 vue / @dcloudio 版本推断。
+ * @param {string} projectDir
+ * @param {any} manifest
+ * @param {'cli' | 'hbuilderx' | 'unknown'} type
+ * @returns {Promise<2 | 3>}
+ */
+export async function detectVueVersion(projectDir, manifest, type = 'cli') {
+  const declared = String(manifest?.vueVersion ?? '').trim()
+  if (declared === '2' || declared === '3') {
+    return declared === '3' ? 3 : 2
+  }
+  if (type === 'hbuilderx') {
+    return 2
+  }
+
+  const packageFile = path.join(projectDir, 'package.json')
+  if (await exists(packageFile)) {
+    const pkg = await readJson(packageFile).catch(() => ({}))
+    const dependencies = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }
+    const candidates = [dependencies.vue, dependencies['@dcloudio/uni-app']].map((value) => String(value ?? ''))
+    if (candidates.some((value) => /^2\./.test(value))) {
+      return 2
+    }
+    if (candidates.some((value) => /^3\./.test(value))) {
+      return 3
+    }
+  }
+  return 3
 }
 
 /**

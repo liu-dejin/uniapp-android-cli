@@ -9,7 +9,7 @@ const REQUIRED = ['manifest.json', 'app-service.js', 'app-config.js', '__uniappv
 /**
  * @param {any} project
  * @param {import('./logger.js').Logger} logger
- * @param {{ hbuilderx?: { root: string, version: string } }} [context]
+ * @param {{ hbuilderx?: { root: string, version: string }, vueVersion?: 2 | 3 }} [context]
  * @returns {Promise<{ dir: string, manifest: any }>}
  */
 export async function runWebBuild(project, logger, context = {}) {
@@ -31,6 +31,7 @@ export async function runWebBuild(project, logger, context = {}) {
       version: hbuilderx.version,
       inputDir: String(project.inputDir ?? project.projectDir),
       outputDir: dir,
+      vueVersion: context.vueVersion ?? 3,
       logger,
     })
   } else {

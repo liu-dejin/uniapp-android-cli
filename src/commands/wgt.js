@@ -3,7 +3,7 @@ import { loadConfig, resolveProject } from '../core/config.js'
 import { ensureDir, exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
-import { readProjectManifest } from '../core/project.js'
+import { detectVueVersion, readProjectManifest } from '../core/project.js'
 import { runWebBuild } from '../core/webBuild.js'
 import { writeWgt } from '../core/wgt.js'
 
@@ -16,6 +16,7 @@ export async function wgtCommand(options) {
   const { project } = await resolveProject(config, options.project, options.cwd)
   const { manifest, type } = await readProjectManifest(project.projectDir)
   project.type = type
+  const vueVersion = await detectVueVersion(project.projectDir, manifest, type)
 
   const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { project }) : null
   let resourcesDir = path.resolve(
@@ -28,7 +29,7 @@ export async function wgtCommand(options) {
     }
     logger.info(`跳过前端构建，使用 ${resourcesDir}`)
   } else {
-    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined })).dir
+    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined, vueVersion })).dir
   }
 
   const appid = String(project.appid ?? manifest.appid)

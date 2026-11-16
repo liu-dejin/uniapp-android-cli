@@ -97,8 +97,8 @@ export function assertVersionMatch(versions) {
  * @param {{ compiler: string | null, sdk: string | null }} versions
  * @param {{ type?: string }} [options]
  */
-export function versionMismatchError(versions, options = {}) {
-  const hint =
+export function versionMismatchHint(versions, options = {}) {
+  const lines =
     options.type === 'hbuilderx'
       ? [
           'HBuilderX 项目的版本由 HBuilderX 决定，两边必须一致，二选一：',
@@ -112,9 +112,17 @@ export function versionMismatchError(versions, options = {}) {
           `  2) 下载与当前编译版本 ${versions.compiler ?? '?'} 匹配的 Android 离线 SDK，并在配置 sdk.root 指向它`,
           '确认后重新执行 uni-pack doctor',
         ]
+  return lines.join('\n')
+}
+
+/**
+ * @param {{ compiler: string | null, sdk: string | null }} versions
+ * @param {{ type?: string }} [options]
+ */
+export function versionMismatchError(versions, options = {}) {
   return new PackError(
     `uni-app 编译版本 ${versions.compiler ?? '未知'} 与离线 SDK ${versions.sdk ?? '未知'} 不一致`,
     EXIT.PREFLIGHT,
-    { hint: hint.join('\n') },
+    { hint: versionMismatchHint(versions, options) },
   )
 }

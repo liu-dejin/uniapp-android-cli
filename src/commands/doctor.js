@@ -3,7 +3,7 @@ import { loadConfig, resolveProject } from '../core/config.js'
 import { exists, readJson } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
-import { normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
+import { detectVueVersion, normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
 import { listDevices } from '../core/adb.js'
 import { resolveAndroidTools, resolveJavaHome, resolveSdk } from '../core/sdk.js'
 import { resolveSigning } from '../core/signing.js'
@@ -57,7 +57,11 @@ export async function doctorCommand(options) {
         { validate: false },
       )
       add('项目', true, `${resolved.name} ${resolved.appid} v${resolved.versionName}(${resolved.versionCode})`)
-      add('项目类型', true, type === 'hbuilderx' ? 'HBuilderX 项目' : 'CLI 项目')
+      add(
+        '项目类型',
+        true,
+        `${type === 'hbuilderx' ? 'HBuilderX 项目' : 'CLI 项目'}（Vue ${await detectVueVersion(project.projectDir, manifest, type)}）`,
+      )
 
       if (type === 'hbuilderx') {
         const hbuilderx = await resolveHbuilderx(config, { project })

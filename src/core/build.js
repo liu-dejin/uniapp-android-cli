@@ -10,7 +10,13 @@ import { applyAssets } from './patch/assets.js'
 import { applyNativePlugins } from './patch/nativePlugins.js'
 import { mergeProjectManifest } from './patch/projectManifest.js'
 import { prepareTemplate } from './patch/template.js'
-import { normalizeManifest, readProjectManifest, readProjectPackage } from './project.js'
+import { UTS_AAR, integrateUtsPlugins, scanUtsPlugins } from './patch/utsPlugins.js'
+import {
+  detectVueVersion,
+  normalizeManifest,
+  readProjectManifest,
+  readProjectPackage,
+} from './project.js'
 import {
   BASE_AARS,
   DEBUG_AAR,
@@ -52,8 +58,11 @@ export async function buildProject(input) {
     targetSdkVersion: project.targetSdkVersion,
     abiFilters: project.abiFilters,
   })
+  const vueVersion = await detectVueVersion(project.projectDir, manifest, type)
   logger.info(`项目 ${resolved.name}（${resolved.appid}）v${resolved.versionName}(${resolved.versionCode})`)
-  logger.detail(`manifest: ${file}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'} 项目）`)
+  logger.detail(
+    `manifest: ${file}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'} 项目，Vue ${vueVersion}）`,
+  )
 
   const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { project }) : null
   if (type === 'hbuilderx' && !hbuilderx && !options.skipWeb) {
@@ -106,7 +115,13 @@ export async function buildProject(input) {
     }
     logger.info(`跳过前端构建，使用 ${resourcesDir}`)
   } else {
-    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined })).dir
+    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined, vueVersion })).dir
+  }
+
+  const utsPlugins = await scanUtsPlugins({ projectDir: project.projectDir, resourcesDir })
+  const hasUts = utsPlugins.some((plugin) => plugin.usable)
+  if (utsPlugins.length > 0) {
+    logger.info(`UTS 插件：${utsPlugins.map((plugin) => plugin.name).join(', ')}`)
   }
 
   const signing = await resolveSigning(project, options)
@@ -130,6 +145,8 @@ export async function buildProject(input) {
     targetDir: path.join(gradleRoot, 'simpleDemo/libs'),
     debug,
     modules: resolved.modules,
+    uts: hasUts,
+    vueVersion,
     logger,
   })
   logger.success(`模板与 AAR 就绪（${aars.count} 个）`)
@@ -177,6 +194,13 @@ export async function buildProject(input) {
     libsDir: path.join(gradleRoot, 'simpleDemo/libs'),
     logger,
   })
+  await integrateUtsPlugins({
+    plugins: utsPlugins,
+    gradleRoot,
+    mainModule: 'simpleDemo',
+    compileSdkVersion,
+    logger,
+  })
   logger.success('配置写入完成')
 
   logger.step(`Gradle ${debug ? 'assembleDebug' : 'assembleRelease'}`)
@@ -207,6 +231,7 @@ export async function buildProject(input) {
       versionName: resolved.versionName,
       versionCode: resolved.versionCode,
       projectType: type,
+      vueVersion,
       compilerVersion: versions.compiler,
       sdkVersion: versions.sdk,
       hbuilderx: hbuilderx?.root ?? '',
@@ -246,10 +271,12 @@ async function verifySignature(apksigner, apk, logger) {
  * @param {string} options.targetDir
  * @param {boolean} options.debug
  * @param {string[]} options.modules
+ * @param {boolean} [options.uts]
+ * @param {2 | 3} [options.vueVersion]
  * @param {import('./logger.js').Logger} options.logger
  */
 async function copyAars(options) {
-  const { sdk, targetDir, debug, modules, logger } = options
+  const { sdk, targetDir, debug, modules, uts, vueVersion, logger } = options
   await ensureDir(targetDir)
 
   /** @type {Map<string, string>} */
@@ -263,6 +290,10 @@ async function copyAars(options) {
   }
 
   const available = new Set(await listLibs(sdk.libsDir))
+  // 模板里的 uniapp-v8-release.aar 可能只带 Vue3 运行时；Vue2 必须用 SDK/libs 的完整版。
+  if (vueVersion === 2 && available.has('uniapp-v8-release.aar')) {
+    sources.set('uniapp-v8-release.aar', path.join(sdk.libsDir, 'uniapp-v8-release.aar'))
+  }
   const missing = []
   for (const name of debug ? [...BASE_AARS, DEBUG_AAR] : BASE_AARS) {
     if (sources.has(name)) {
@@ -295,6 +326,15 @@ async function copyAars(options) {
   }
   if (unresolved.length > 0) {
     logger.warn(`未识别的模块 AAR：${unresolved.join(', ')}（若运行时报模块缺失，请在配置 modules 里补充）`)
+  }
+
+  if (uts) {
+    if (!available.has(UTS_AAR)) {
+      throw new PackError(`离线 SDK 缺少 ${UTS_AAR}，无法编译 UTS 插件`, EXIT.PREFLIGHT, {
+        hint: '请换用包含 utsplugin-release.aar 的 Android 离线 SDK',
+      })
+    }
+    sources.set(UTS_AAR, path.join(sdk.libsDir, UTS_AAR))
   }
 
   for (const [name, source] of sources) {

@@ -1,12 +1,12 @@
 import path from 'node:path'
-import { CONFIG_FILE, loadConfig, saveConfig } from '../core/config.js'
+import { CONFIG_FILE, loadConfig, resolveDefaultWebBuild, saveConfig } from '../core/config.js'
 import { PackError, EXIT } from '../core/errors.js'
 import { exists, readText } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
-import { normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
+import { detectVueVersion, normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
 import { findSdkForVersion, resolveSdkRootInput } from '../core/sdk.js'
-import { readCompilerVersion, readSdkVersion } from '../core/version.js'
+import { readCompilerVersion, readSdkVersion, versionMismatchHint } from '../core/version.js'
 
 // 这些字段以 manifest 为准；旧配置里的快照会在重跑 init 时清掉。
 const SNAPSHOT_FIELDS = [
@@ -28,6 +28,7 @@ export async function initCommand(options) {
   const config = await loadConfig()
 
   const { manifest, type } = await readProjectManifest(projectDir)
+  const vueVersion = await detectVueVersion(projectDir, manifest, type)
   const fallbackPackage = String(options.package ?? '') || (await readProjectPackage(projectDir))
   const resolved = normalizeManifest(manifest, { package: fallbackPackage }, { validate: false })
   const key = projectKey(resolved)
@@ -63,16 +64,13 @@ export async function initCommand(options) {
   for (const field of SNAPSHOT_FIELDS) {
     delete next[field]
   }
+  const defaultWebBuild = await resolveDefaultWebBuild(type, projectDir)
   const webBuild =
     type === 'hbuilderx'
       ? existing.webBuild?.mode === 'hbuilderx'
         ? existing.webBuild
-        : { mode: 'hbuilderx', outputDir: 'unpackage/dist/build/app-plus' }
-      : (existing.webBuild ?? {
-          command: 'pnpm',
-          args: ['run', 'build:app-android'],
-          outputDir: 'dist/build/app',
-        })
+        : defaultWebBuild
+      : (existing.webBuild ?? defaultWebBuild)
 
   config.projects = {
     ...(config.projects ?? {}),
@@ -107,10 +105,18 @@ export async function initCommand(options) {
 
   logger.step('已写入配置')
   logger.info(CONFIG_FILE)
-  logger.info(`项目：${key}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'}）  ${resolved.appid}  ${resolved.packageName || '(未配置包名)'}`)
+  logger.info(
+    `项目：${key}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'}，Vue ${vueVersion}）  ${resolved.appid}  ${resolved.packageName || '(未配置包名)'}`,
+  )
   logger.info(`版本：${resolved.versionName}(${resolved.versionCode})，以 manifest.json 为准`)
   logger.info(`编译器：${compiler.version ?? '未知'}（${compiler.source}）`)
   logger.info(`离线 SDK：${sdkRoot}（${sdkVersion ?? '版本未知'}）`)
+  if (compiler.version && sdkVersion && compiler.version !== sdkVersion) {
+    logger.warn(`版本不一致：编译器 ${compiler.version} / 离线 SDK ${sdkVersion}`)
+    for (const line of versionMismatchHint({ compiler: compiler.version, sdk: sdkVersion }, { type }).split('\n')) {
+      logger.warn(line.trim())
+    }
+  }
   if (type === 'hbuilderx') {
     logger.info(`HBuilderX：${hbuilderx?.root || '(未找到)'}`)
   }
