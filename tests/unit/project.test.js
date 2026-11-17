@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   detectProject,
   detectVueVersion,
+  missingAppKeyHint,
   normalizeManifest,
   readProjectManifest,
   readProjectPackage,
@@ -154,4 +155,10 @@ test('CLI 项目从 package.json 推断 Vue 版本', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('缺少 AppKey 时提示运行时症状与修复方式', () => {
+  assert.match(missingAppKeyHint(''), /未配置appkey或配置错误/)
+  assert.match(missingAppKeyHint(undefined), /--appkey/)
+  assert.equal(missingAppKeyHint('644d2d1528c5ee62ec27d990c6308db4'), '')
 })

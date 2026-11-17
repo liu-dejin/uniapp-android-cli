@@ -162,6 +162,19 @@ function firstPresent(...values) {
 }
 
 /**
+ * DCloud 运行时在安装后才会校验 AppKey，缺配置时只弹「未配置appkey或配置错误」，
+ * 在构建前提示可以避免白等一次 Gradle 和安装。
+ * @param {string | undefined} appKey
+ * @returns {string}
+ */
+export function missingAppKeyHint(appKey) {
+  if (String(appKey ?? '').trim()) {
+    return ''
+  }
+  return '未配置 DCloud AppKey：安装后应用会提示「未配置appkey或配置错误」，请重跑 init 并加 --appkey <key>'
+}
+
+/**
  * manifest 是唯一来源，fallbacks 只在该字段缺失时兜底。
  * 配置里的同名字段可能是 init 时的快照，直接覆盖会让改过 manifest 的项目静默打旧版本。
  * @param {any} manifest

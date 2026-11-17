@@ -13,6 +13,7 @@ import { prepareTemplate } from './patch/template.js'
 import { UTS_AAR, integrateUtsPlugins, scanUtsPlugins } from './patch/utsPlugins.js'
 import {
   detectVueVersion,
+  missingAppKeyHint,
   normalizeManifest,
   readProjectManifest,
   readProjectPackage,
@@ -63,6 +64,10 @@ export async function buildProject(input) {
   logger.detail(
     `manifest: ${file}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'} 项目，Vue ${vueVersion}）`,
   )
+  const appKeyHint = missingAppKeyHint(project.appKey)
+  if (appKeyHint) {
+    logger.warn(appKeyHint)
+  }
 
   const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { project }) : null
   if (type === 'hbuilderx' && !hbuilderx && !options.skipWeb) {
