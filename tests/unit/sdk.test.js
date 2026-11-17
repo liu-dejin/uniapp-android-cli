@@ -31,6 +31,7 @@ dependencies {
 }
 `)
   await touch(root, ['HBuilder-Integrate-AS', 'simpleDemo', 'src', 'main', 'AndroidManifest.xml'], '<manifest/>')
+  await touch(root, ['HBuilder-Integrate-AS', 'gradlew'], '#!/bin/sh\n')
   await touch(root, ['HBuilder-Integrate-AS', 'gradlew.bat'], '')
   await touch(root, ['SDK', 'libs', 'lib.5plus.base-release.aar'], '')
   await touch(root, ['SDK', 'assets', 'data', 'dcloud_control.xml'], '<hbuilder/>')
