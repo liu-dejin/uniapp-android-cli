@@ -2,7 +2,8 @@ import path from 'node:path'
 import { copyTree, ensureDir, readText, writeText } from '../fsx.js'
 
 const MARKERS = [
-  /\/\/ ===== SMARTPACK[\s\S]*?END =====[^\n]*\n?/g,
+  // CORE DEPS 是 SDK 运行时依赖（zip4j、okhttp 等），不是插件注入，必须保留
+  /\/\/ ===== SMARTPACK (?!CORE DEPS)[\s\S]*?END =====[^\n]*\n?/g,
   /<!-- ===== SMARTPACK[\s\S]*?END ===== -->\r?\n?/g,
 ]
 

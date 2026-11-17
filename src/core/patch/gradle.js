@@ -19,6 +19,42 @@ export function replaceExactlyOnce(text, pattern, replacement, label) {
   return text.replace(global, /** @type {any} */ (typeof replacement === 'string' ? replacement : replacement))
 }
 
+const CORE_DEPENDENCIES = [
+  { key: 'com.squareup.okhttp3:okhttp', line: 'implementation "com.squareup.okhttp3:okhttp:3.12.12"' },
+  { key: 'com.facebook.fresco:middleware', line: 'implementation "com.facebook.fresco:middleware:3.4.0"' },
+  { key: 'com.facebook.fresco:webpsupport', line: 'implementation "com.facebook.fresco:webpsupport:3.4.0"' },
+  { key: 'com.facebook.fresco:animated-webp', line: 'implementation "com.facebook.fresco:animated-webp:3.4.0"' },
+  {
+    key: 'androidx.legacy:legacy-support-v4',
+    line: 'implementation "androidx.legacy:legacy-support-v4:1.0.0"',
+  },
+  { key: 'net.lingala.zip4j:zip4j', line: 'implementation "net.lingala.zip4j:zip4j:2.11.5"' },
+  {
+    key: 'com.github.bumptech.glide:compiler',
+    line: 'annotationProcessor "com.github.bumptech.glide:compiler:4.9.0"',
+  },
+]
+
+/**
+ * 部分 SDK 模板的核心依赖放在 SMARTPACK 标记块里，模板被清理或换成干净版本时可能缺失。
+ * zip4j 缺失会让 RuntimeFeatureImpl 在后台线程抛 NoClassDefFoundError 并闪退。
+ * @param {string} text
+ * @returns {string}
+ */
+export function ensureCoreDependencies(text) {
+  const missing = CORE_DEPENDENCIES.filter((item) => !text.includes(item.key))
+  if (missing.length === 0) {
+    return text
+  }
+  const snippet = missing.map((item) => `    ${item.line}`).join('\n')
+  const match = /dependencies\s*\{/.exec(text)
+  if (!match) {
+    throw new PackError('模板 build.gradle 缺少 dependencies 块', EXIT.GRADLE)
+  }
+  const open = match.index + match[0].length
+  return `${text.slice(0, open)}\n${snippet}${text.slice(open)}`
+}
+
 /**
  * @typedef {Object} GradlePatchContext
  * @property {string} packageName
@@ -100,6 +136,7 @@ export async function patchAppGradle(file, context) {
     )
   }
 
+  text = ensureCoreDependencies(text)
   await writeText(file, text)
 }
 
