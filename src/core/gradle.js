@@ -111,13 +111,15 @@ function printWarningSummary(groups, logger) {
     return
   }
   const total = groups.reduce((sum, group) => sum + group.count, 0)
-  logger.warn(`Gradle 告警：${total} 条同类告警已聚合为 ${groups.length} 类（看原始栈请用 --verbose 重跑）`)
+  // 一次 warn 输出整段摘要：warn 走 stderr、info 走 stdout，分开输出会被缓冲打乱顺序
+  const lines = [`Gradle 告警：${total} 条同类告警已聚合为 ${groups.length} 类（看原始栈请用 --verbose 重跑）`]
   for (const group of groups) {
-    logger.warn(`  ${group.label} ×${group.count}`)
+    lines.push(`  ${group.label} ×${group.count}`)
     if (group.sample[0]) {
-      logger.info(`    样例：${group.sample[0]}`)
+      lines.push(`    样例：${group.sample[0]}`)
     }
   }
+  logger.warn(lines.join('\n'))
 }
 
 /**
