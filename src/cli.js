@@ -100,7 +100,7 @@ export async function main(argv) {
     options.positionals = positionals
     options.cwd = process.cwd()
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
+    console.error(translateArgsError(error, rest, spec))
     process.exitCode = 2
     return
   }
@@ -143,6 +143,37 @@ export async function main(argv) {
     }
     process.exitCode = failure.code
   }
+}
+
+/**
+ * node:util parseArgs 的报错是英文，且单横线长参数会被拆成短选项（-appkey → -a），
+ * 这里翻译成中文并提示正确写法，避免用户对着 "Unknown option '-a'" 猜。
+ * @param {unknown} error
+ * @param {string[]} args
+ * @param {Record<string, unknown>} spec
+ * @returns {string}
+ */
+export function translateArgsError(error, args, spec) {
+  const message = error instanceof Error ? error.message : String(error)
+  const known = new Set(Object.keys(spec))
+  const mistaken = args.find((arg) => /^-[^-][\w-]+$/.test(arg) && known.has(arg.slice(1)))
+  if (mistaken) {
+    return `未知参数：${mistaken}\n长参数需要两个横线，改为：--${mistaken.slice(1)}`
+  }
+  const unknown = /Unknown option '(-[^']+)'/.exec(message)?.[1]
+  if (unknown) {
+    const flags = new Set()
+    for (const [key, value] of Object.entries(spec)) {
+      const short =
+        value && typeof value === 'object' && 'short' in value ? String(/** @type {any} */ (value).short ?? '') : ''
+      if (short) {
+        flags.add(`-${short}`)
+      }
+      flags.add(key.length === 1 ? `-${key}` : `--${key}`)
+    }
+    return `未知参数：${unknown}\n可用参数：${[...flags].sort().join(' ')}`
+  }
+  return message
 }
 
 /**
