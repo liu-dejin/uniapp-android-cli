@@ -332,7 +332,7 @@ uni-pack version
 | `android.sdkDir` | Android SDK 根目录 |
 | `android.buildTools` | 指定 build-tools 版本；留空时用 SDK 模板值，再退到本机最高版本 |
 | `android.jdk` | JDK 目录 |
-| `workDir` | 构建工作目录，每次构建会清空对应的 `gradle/` |
+| `workDir` | 构建工作目录；首次构建复制 SDK 模板，之后复用（保留 `build/`、`.gradle/`），换 SDK 或模板改动时重新复制 |
 | `projects.<key>.projectDir` | 项目目录 |
 | `projects.<key>.type` | `cli` 或 `hbuilderx`，一般由 `init` 自动识别 |
 | `projects.<key>.sdkRoot` | 项目专用离线 SDK，覆盖全局 `sdk.root` |
@@ -429,6 +429,8 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
    - HBuilderX：按 `manifest.json` 的 `vueVersion` 选择编译器。Vue 3 用 `uniapp-cli-vite`，Vue 2 用 `uniapp-cli`，产物均为 `unpackage/dist/build/app-plus`
    - 编译后校验产物 `manifest.json` 的 `version.name` / `version.code` 与项目 manifest 一致；bump 版本后忘记重新编译、或 `--skip-web` 用了旧 dist 都会在这里失败（退出码 `4`）
 2. 按项目版本匹配离线 SDK，把 `HBuilder-Integrate-AS` 复制到工作目录，**不改动共享 SDK**
+   - 首次构建或 SDK/模板变化时整棵复制；之后按模板指纹复用，只刷新会被 patch 的 `build.gradle` / `settings.gradle` / `simpleDemo/build.gradle` / `AndroidManifest.xml`，并清掉当前 appid 的 `www` 等增量输入
+   - `build/`、`.gradle/` 保留，Gradle 可以命中 UP-TO-DATE / FROM-CACHE
 3. 复制 AAR
    - 模板 `simpleDemo/libs` 是该 SDK 版本的基线
    - Vue 2 项目会改用 `SDK/libs` 里包含 Vue 2 运行时的完整 `uniapp-v8-release.aar`（模板里的可能是只含 Vue 3 的裁剪版）
@@ -451,7 +453,7 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
 7. 执行 `gradlew :simpleDemo:assembleRelease|assembleDebug`
 8. `apksigner verify` 校验，输出时间戳 APK、`latest` 硬链与构建清单；`--prune` 按需清理旧包
 
-工作目录：`<workDir>/<项目名>/gradle`，每次构建前清空；Gradle 日志在 `<workDir>/<项目名>/logs/`。默认会把重复的 D8 / Kotlin metadata 告警折叠成「N 条 + 首个样例」，失败时只打印 `FAILURE` / `What went wrong` 前后各 15 行；需要完整原始日志时加 `--verbose`。
+工作目录：`<workDir>/<项目名>/gradle`，首次构建复制模板，之后复用；Gradle 日志在 `<workDir>/<项目名>/logs/`。默认会把重复的 D8 / Kotlin metadata 告警折叠成「N 条 + 首个样例」，失败时只打印 `FAILURE` / `What went wrong` 前后各 15 行；需要完整原始日志时加 `--verbose`。
 
 ## 真机安装与调试
 

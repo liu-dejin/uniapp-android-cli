@@ -9,7 +9,8 @@ import { patchAppGradle, patchRootGradle } from './patch/gradle.js'
 import { applyAssets } from './patch/assets.js'
 import { applyNativePlugins } from './patch/nativePlugins.js'
 import { mergeProjectManifest } from './patch/projectManifest.js'
-import { prepareTemplate } from './patch/template.js'
+import { prepareTemplate, refreshTemplateFiles } from './patch/template.js'
+import { cleanIncrementalInputs, readTemplateState, templateFingerprint, writeTemplateState } from './templateCache.js'
 import { UTS_AAR, integrateUtsPlugins, scanUtsPlugins } from './patch/utsPlugins.js'
 import {
   detectVueVersion,
@@ -165,8 +166,27 @@ export async function buildProject(input) {
   const gradleRoot = path.join(workRoot, 'gradle')
 
   logger.step('准备构建工程')
-  await emptyDir(gradleRoot)
-  await prepareTemplate(sdk.templateRoot, gradleRoot)
+  const template = await templateFingerprint({ root: sdk.root, templateRoot: sdk.templateRoot, version: sdkVersion })
+  const previous = await readTemplateState(gradleRoot)
+  if (
+    previous?.fingerprint === template.fingerprint &&
+    (await exists(path.join(gradleRoot, 'simpleDemo/build.gradle')))
+  ) {
+    await refreshTemplateFiles(sdk.templateRoot, gradleRoot)
+    const cleaned = await cleanIncrementalInputs({ gradleRoot, appid: resolved.appid })
+    logger.info(`复用上次构建工程（模板未变化，清理 ${cleaned.length} 项增量输入）`)
+  } else {
+    await emptyDir(gradleRoot)
+    await prepareTemplate(sdk.templateRoot, gradleRoot)
+    await writeTemplateState(gradleRoot, {
+      fingerprint: template.fingerprint,
+      sdkRoot: sdk.root,
+      templateRoot: sdk.templateRoot,
+      version: sdkVersion ?? undefined,
+      builtAt: new Date().toISOString(),
+    })
+    logger.info('已复制离线 SDK 模板到工作目录')
+  }
   const aars = await copyAars({
     sdk,
     targetDir: path.join(gradleRoot, 'simpleDemo/libs'),

@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { copyFile } from 'node:fs/promises'
 import { copyTree, ensureDir, readText, writeText } from '../fsx.js'
 
 const MARKERS = [
@@ -19,8 +20,16 @@ const SKIP = new Set([
   'simpleDemo/aw-pack.jks',
 ])
 
+// 这些文件每次构建都会按项目改写，增量复用时也必须从干净模板重新覆盖
+const PATCHED_FILES = [
+  'build.gradle',
+  'settings.gradle',
+  'simpleDemo/build.gradle',
+  'simpleDemo/src/main/AndroidManifest.xml',
+]
+
 /**
- * 从 SDK 复制一份干净模板到工作目录，并清掉上一版插件留下的 SMARTPACK 注入块。
+ * 从 SDK 复制一份干净模板到工作目录（首次构建或 SDK/模板变化时使用）。
  * @param {string} templateRoot
  * @param {string} targetDir
  */
@@ -31,16 +40,24 @@ export async function prepareTemplate(templateRoot, targetDir) {
     targetDir,
     (relative) => SKIP.has(relative) || relative.startsWith('simpleDemo/build/'),
   )
-
-  for (const file of [
-    path.join(targetDir, 'build.gradle'),
-    path.join(targetDir, 'simpleDemo/build.gradle'),
-    path.join(targetDir, 'simpleDemo/src/main/AndroidManifest.xml'),
-  ]) {
-    await stripMarkerBlocks(file)
-  }
-
+  await refreshTemplateFiles(templateRoot, targetDir)
   return targetDir
+}
+
+/**
+ * 只把会被 patch 改写的几个文件恢复成模板原文，并清掉上一版插件留下的 SMARTPACK 注入块。
+ * 增量构建时用它代替整棵模板复制。
+ * @param {string} templateRoot
+ * @param {string} targetDir
+ */
+export async function refreshTemplateFiles(templateRoot, targetDir) {
+  for (const relative of PATCHED_FILES) {
+    const source = path.join(templateRoot, relative)
+    const target = path.join(targetDir, relative)
+    await ensureDir(path.dirname(target))
+    await copyFile(source, target)
+    await stripMarkerBlocks(target)
+  }
 }
 
 /**
