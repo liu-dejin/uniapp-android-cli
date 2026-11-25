@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { loadConfig, resolveProject } from '../core/config.js'
+import { PackError, EXIT } from '../core/errors.js'
 import { exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
@@ -39,7 +40,9 @@ export async function wgtCommand(options) {
   )
   if (options.skipWeb) {
     if (!(await exists(path.join(resourcesDir, 'app-service.js')))) {
-      throw new Error('--skip-web 但前端产物不存在，请先构建')
+      throw new PackError('--skip-web 但前端产物不存在，请先构建', EXIT.WEB_BUILD, {
+        hint: '先执行 pnpm build:app-android（或 HBuilderX 编译），或去掉 --skip-web',
+      })
     }
     logger.info(`跳过前端构建，使用 ${resourcesDir}`)
   } else {
