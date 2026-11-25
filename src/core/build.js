@@ -1,4 +1,4 @@
-import { copyFile, readdir } from 'node:fs/promises'
+import { copyFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
 import { emptyDir, ensureDir, exists } from './fsx.js'
@@ -203,7 +203,9 @@ export async function buildProject(input) {
     debug,
   })
   await mergeProjectManifest({ targetFile: androidManifest, projectDir: project.projectDir, logger })
-  await copyFile(signing.keystore, path.join(gradleRoot, 'simpleDemo/aw-pack.jks'))
+  // 密钥库只复制到工作目录供 Gradle 本次构建使用，构建结束后立即删除
+  const keystoreCopy = path.join(gradleRoot, 'simpleDemo/aw-pack.jks')
+  await copyFile(signing.keystore, keystoreCopy)
   await applyAssets({
     moduleDir: path.join(gradleRoot, 'simpleDemo'),
     dataDir: sdk.dataDir,
@@ -232,15 +234,22 @@ export async function buildProject(input) {
   logger.success('配置写入完成')
 
   logger.step(`Gradle ${debug ? 'assembleDebug' : 'assembleRelease'}`)
-  await runGradle({
-    gradlew: sdk.gradlew,
-    cwd: gradleRoot,
-    task: debug ? 'assembleDebug' : 'assembleRelease',
-    javaHome,
-    androidSdkDir: config.android.sdkDir,
-    offline: Boolean(options.offline),
-    logger,
-  })
+  try {
+    await runGradle({
+      gradlew: sdk.gradlew,
+      cwd: gradleRoot,
+      task: debug ? 'assembleDebug' : 'assembleRelease',
+      javaHome,
+      androidSdkDir: config.android.sdkDir,
+      offline: Boolean(options.offline),
+      signing,
+      logger,
+    })
+  } finally {
+    await rm(keystoreCopy, { force: true }).catch((error) => {
+      logger.warn(`临时签名文件删除失败：${error instanceof Error ? error.message : String(error)}`)
+    })
+  }
 
   const apkDir = path.join(gradleRoot, 'simpleDemo/build/outputs/apk', mode)
   const apk = await findApk(apkDir, mode)

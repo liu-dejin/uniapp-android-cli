@@ -369,6 +369,8 @@ keyAlias=key0
 
 密码优先级：命令行 → 环境变量 → `keystore.properties` → `keyPassword` 缺省时复用 `storePassword`。
 
+密码不会落盘：工作目录的 `build.gradle` 只写 `System.getenv('UNI_PACK_STORE_PASS')` / `System.getenv('UNI_PACK_KEY_PASS')`，解析出的密码由构建子进程环境变量注入；复制到工作目录的 `aw-pack.jks` 在 Gradle 结束（成功或失败）后立即删除。
+
 ### 多项目与多 SDK
 
 同一台机器可以同时存在多个版本：
@@ -433,7 +435,7 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
    - `BASE_AARS` 与 `app-plus.modules` 常见模块按需补充
    - 老 SDK 缺少的 AAR 只提示不阻断
 4. 写入项目配置
-   - `build.gradle`：包名、版本、ABI、`compileSdk`、`buildTools`、签名
+   - `build.gradle`：包名、版本、ABI、`compileSdk`、`buildTools`、签名（密码只写环境变量名，由子进程注入）
    - `AndroidManifest.xml`：AppKey、权限、TV 入口，并合并项目根 `AndroidManifest.xml` 的权限与 meta-data
    - `dcloud_control.xml`、`strings.xml`、图标与启动图
 5. 集成 `nativeplugins/`

@@ -6,14 +6,37 @@ import { GradleLogAggregator, formatFailureHint } from './gradleLog.js'
 import { run } from './process.js'
 
 /**
- * @param {Object} options
- * @param {string} options.gradlew
- * @param {string} options.cwd
- * @param {'assembleRelease' | 'assembleDebug'} options.task
- * @param {string} options.javaHome
- * @param {string} options.androidSdkDir
- * @param {boolean} [options.offline]
- * @param {import('./logger.js').Logger} options.logger
+ * @typedef {Object} RunGradleOptions
+ * @property {string} gradlew
+ * @property {string} cwd
+ * @property {'assembleRelease' | 'assembleDebug'} task
+ * @property {string} javaHome
+ * @property {string} androidSdkDir
+ * @property {boolean} [offline]
+ * @property {{ storePassword: string, keyPassword: string }} [signing] 只通过环境变量传给 Gradle，不落盘
+ * @property {import('./logger.js').Logger} logger
+ */
+
+/**
+ * @param {Pick<RunGradleOptions, 'javaHome' | 'androidSdkDir' | 'signing'>} options
+ * @returns {Record<string, string>}
+ */
+export function buildGradleEnv(options) {
+  return {
+    JAVA_HOME: options.javaHome,
+    ANDROID_HOME: options.androidSdkDir,
+    ANDROID_SDK_ROOT: options.androidSdkDir,
+    ...(options.signing
+      ? {
+          UNI_PACK_STORE_PASS: options.signing.storePassword,
+          UNI_PACK_KEY_PASS: options.signing.keyPassword,
+        }
+      : {}),
+  }
+}
+
+/**
+ * @param {RunGradleOptions} options
  */
 export async function runGradle(options) {
   const args = [`:simpleDemo:${options.task}`, '--no-daemon', '--console=plain']
@@ -40,11 +63,7 @@ export async function runGradle(options) {
   try {
     await run(options.gradlew, args, {
       cwd: options.cwd,
-      env: {
-        JAVA_HOME: options.javaHome,
-        ANDROID_HOME: options.androidSdkDir,
-        ANDROID_SDK_ROOT: options.androidSdkDir,
-      },
+      env: buildGradleEnv(options),
       // 非 verbose 时只写聚合后的日志；verbose 时原样流式落盘
       onChunk: verbose ? (chunk) => stream.write(chunk) : undefined,
       onLine: (line) => {

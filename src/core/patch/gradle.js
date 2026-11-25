@@ -112,13 +112,14 @@ export async function patchAppGradle(file, context) {
     )
   }
 
+  // 密码不落盘：只写环境变量名，由 runGradle 在子进程 env 里注入
   const signingBlock = [
     'signingConfigs {',
     '        config {',
     `            keyAlias '${context.signing.keyAlias}'`,
-    `            keyPassword '${context.signing.keyPassword}'`,
+    "            keyPassword System.getenv('UNI_PACK_KEY_PASS')",
     "            storeFile file('aw-pack.jks')",
-    `            storePassword '${context.signing.storePassword}'`,
+    "            storePassword System.getenv('UNI_PACK_STORE_PASS')",
     '            v1SigningEnabled true',
     '            v2SigningEnabled true',
     '        }',
