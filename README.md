@@ -185,10 +185,16 @@ uni-pack build [-p <dir>] [--mode release|debug] [--skip-web] [--out <dir>]
 ### wgt
 
 ```bash
-uni-pack wgt [-p <dir>] [--skip-web] [--out <dir>]
+uni-pack wgt [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
 ```
 
-默认输出到 `<项目>/unpackage/release/wgt/<appid>.wgt`。
+默认输出到 `<项目>/unpackage/release/wgt`：
+
+| 文件 | 说明 |
+| --- | --- |
+| `<appid>-<versionName>.wgt` | 带版本号，重复打包不会互相覆盖 |
+| `<appid>-<versionName>.json` | 同名版本清单：`appid` / `versionName` / `versionCode` / `size` / `sha256` / `builtAt` |
+| `<appid>.wgt` | 硬链接到最新版本，旧的固定路径继续可用 |
 
 打包前会校验前端产物 `manifest.json` 的版本与项目 manifest 是否一致：不一致直接以退出码 `4` 失败，避免「新版本号 + 旧资源」。确认 `dist` 已是最新时可加 `--skip-resource-check` 跳过。
 

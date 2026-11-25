@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { loadConfig, resolveProject } from '../core/config.js'
-import { ensureDir, exists } from '../core/fsx.js'
+import { exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
 import { detectVueVersion, normalizeManifest, readProjectManifest } from '../core/project.js'
@@ -52,18 +52,25 @@ export async function wgtCommand(options) {
 
   const appid = String(project.appid ?? manifest.appid)
   const outputDir = path.resolve(options.out ?? path.join(project.projectDir, 'unpackage/release/wgt'))
-  await ensureDir(outputDir)
+  const versionName = resourceVersion.versionName || resolved.versionName
+  const versionCode = resourceVersion.versionCode || resolved.versionCode
 
   logger.step('生成 wgt')
-  const result = await writeWgt({ resourcesDir, outputFile: path.join(outputDir, `${appid}.wgt`) })
+  const result = await writeWgt({ resourcesDir, outputDir, appid, versionName, versionCode })
   logger.success(`wgt：${result.file}（${(result.size / 1024 / 1024).toFixed(1)} MB）`)
+  logger.info(`版本清单：${result.meta}`)
+  logger.info(`固定入口：${result.latest}（硬链到最新版本）`)
   logger.info(`sha256：${result.sha256}`)
 
   logger.output('wgt', {
     ok: true,
     file: result.file,
+    latest: result.latest,
+    meta: result.meta,
     sha256: result.sha256,
     size: result.size,
+    versionName,
+    versionCode,
     resourceVersion: resourceVersion.versionName,
     resourceVersionCode: resourceVersion.versionCode,
   })

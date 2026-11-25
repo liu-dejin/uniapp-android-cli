@@ -1,18 +1,36 @@
-import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createWriteStream } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import { PackError, EXIT } from './errors.js'
-import { ensureDir, exists, readJson } from './fsx.js'
+import { ensureDir, exists, readJson, replaceHardLink, writeJson } from './fsx.js'
+import { fileHash } from './hash.js'
 
 const REQUIRED = ['manifest.json', 'app-service.js', '__uniappview.html']
 
 /**
+ * 产物基名：<appid>-<versionName>。版本名里可能有斜杠等字符，统一替换成下划线。
+ * @param {{ appid: string, versionName: string }} options
+ * @returns {string}
+ */
+export function wgtBaseName(options) {
+  const appid = String(options.appid ?? '').trim()
+  const version = String(options.versionName ?? '')
+    .trim()
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return version ? `${appid}-${version}` : appid
+}
+
+/**
  * @param {Object} input
  * @param {string} input.resourcesDir
- * @param {string} input.outputFile
+ * @param {string} input.outputDir
+ * @param {string} input.appid
+ * @param {string} input.versionName
+ * @param {number} input.versionCode
+ * @returns {Promise<{ file: string, meta: string, latest: string, sha256: string, size: number, manifest: any }>}
  */
 export async function writeWgt(input) {
   const manifest = await readJson(path.join(input.resourcesDir, 'manifest.json'))
@@ -29,19 +47,36 @@ export async function writeWgt(input) {
     throw new PackError('wgt 的 manifest.json 缺少 id', EXIT.WGT)
   }
 
-  await ensureDir(path.dirname(input.outputFile))
+  const baseName = wgtBaseName({ appid: input.appid, versionName: input.versionName })
+  const outputFile = path.join(input.outputDir, `${baseName}.wgt`)
+  const metaFile = path.join(input.outputDir, `${baseName}.json`)
+  const latest = path.join(input.outputDir, `${input.appid}.wgt`)
+
+  await ensureDir(input.outputDir)
   const zip = new yazl.ZipFile()
   await addDirectory(zip, input.resourcesDir, '')
   zip.end()
-  await pipeline(zip.outputStream, createWriteStream(input.outputFile))
+  await pipeline(zip.outputStream, createWriteStream(outputFile))
 
-  const buffer = await readFile(input.outputFile)
-  const sha256 = createHash('sha256').update(buffer).digest('hex')
-  if (buffer.length < 1024 * 1024) {
-    throw new PackError(`wgt 体积异常（${buffer.length} 字节），检查资源目录是否完整`, EXIT.WGT)
+  const size = (await stat(outputFile)).size
+  if (size < 1024 * 1024) {
+    throw new PackError(`wgt 体积异常（${size} 字节），检查资源目录是否完整`, EXIT.WGT)
   }
+  const sha256 = await fileHash(outputFile)
 
-  return { file: input.outputFile, sha256, size: buffer.length, manifest }
+  await writeJson(metaFile, {
+    appid: input.appid,
+    versionName: input.versionName,
+    versionCode: input.versionCode,
+    file: path.basename(outputFile),
+    size,
+    sha256,
+    builtAt: new Date().toISOString(),
+  })
+  // 固定名保持旧路径可用：硬链到最新版本，零复制且不会被覆盖
+  await replaceHardLink(outputFile, latest)
+
+  return { file: outputFile, meta: metaFile, latest, sha256, size, manifest }
 }
 
 /**
@@ -60,17 +95,4 @@ async function addDirectory(zip, dir, prefix) {
       zip.addFile(absolute, relative)
     }
   }
-}
-
-/**
- * @param {string} file
- */
-export function fileHash(file) {
-  return new Promise((resolve, reject) => {
-    const sha = createHash('sha256')
-    createReadStream(file)
-      .on('data', (chunk) => sha.update(chunk))
-      .on('error', reject)
-      .on('end', () => resolve(sha.digest('hex')))
-  })
 }

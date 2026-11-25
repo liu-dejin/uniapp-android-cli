@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, link, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 /**
@@ -146,6 +146,17 @@ export async function copyTree(from, to, skip) {
       return !(skip?.(relative, false) ?? false)
     },
   })
+}
+
+/**
+ * 用硬链接把 target 指向 source：latest 副本零复制，且 source 被覆盖时不会影响已发布文件。
+ * @param {string} source
+ * @param {string} target
+ */
+export async function replaceHardLink(source, target) {
+  await ensureDir(path.dirname(target))
+  await rm(target, { force: true })
+  await link(source, target)
 }
 
 /**
