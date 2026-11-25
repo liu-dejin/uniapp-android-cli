@@ -207,6 +207,13 @@ uni-pack wgt [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
 
 打包前会校验前端产物 `manifest.json` 的版本与项目 manifest 是否一致：不一致直接以退出码 `4` 失败，避免「新版本号 + 旧资源」。确认 `dist` 已是最新时可加 `--skip-resource-check` 跳过。
 
+如果项目里还保留 7-Zip 版 `scripts/build-wgt.mjs`，可以迁到 `uni-pack wgt`：
+
+- 文件名由 `PRO-DIS-V2-<ver>.wgt` 变为 `<appid>-<ver>.wgt`，并附带同名 `.json`（sha256 / 版本 / 大小）与固定入口 `<appid>.wgt`；
+- 默认输出目录为 `unpackage/release/wgt`，需要旧目录时用 `--out` 指回；
+- 打包前已有资源版本闸门，不再需要脚本自己核对版本；
+- 下游若依赖 md5 或固定前缀，先按清单字段/文件名适配；确认没有 CI 或脚本引用后，再删除 `scripts/build-wgt.mjs` 与 `package.json` 的 `build:wgt`。
+
 ### debug
 
 ```bash
@@ -497,8 +504,24 @@ uni-pack debug -p <项目> --logs
 
 `debug` 构建的基座与正式包同包名、同签名，安装基座会覆盖设备上的正式包。
 
+- **不会丢数据**：同包名同签名覆盖安装会保留 `/data/data/<包名>` 与 `/sdcard/Android/data/<包名>` 下的数据；
+- **真实风险是现场设备上的正式包被调试基座替换**，所以调试机与现场机应分开；
+- 不要给 debug 加 `applicationIdSuffix`：包名一变，DCloud AppKey 校验必然失败（见「签名与 AppKey」），而且两个包名会变成两个独立应用、数据目录互不相通。
+
 > 没有采用「wgt + 热更新」：实测 SDK 5.34 上 `plus.runtime.install` 安装 wgt 后基座会在
 > `io.dcloud.feature.pdr.RuntimeFeatureImpl` 抛空指针崩溃。`wgt` 命令仍可用于业务侧自建更新。
+
+### 资源热更（wgt 与 debug 基座）
+
+DCloud 5+ 运行时对每个 appid 有两套资源来源：优先读文件系统副本 `.../apps/<appid>/www`，没有才回退 APK 内 `assets/apps/<appid>/www`。
+
+- **正式包**的文件系统副本在应用私有目录（`/data/data/<包名>/files/...`），普通 adb 写不进去，所以热更只能走 wgt 安装（`plus.runtime.install` / 在线更新）；
+- **debug 基座**（`dcloud_control.xml` 根节点带 `debug="true"`）的文件系统根目录是 `/sdcard/Android/data/<包名>/`，理论上可以 `adb push` 做手工热更：
+  - 至少推 `manifest.json`、`app-service.js`、`__uniappview.html`；
+  - `appid` 必须与 `dcloud_control.xml`、推送的 `manifest.json` 的 `id` 一致；
+  - 推完必须 `adb shell am force-stop <包名>` 冷启动，热启动不会重新扫描；
+  - 这是未文档化用法，不建议作为发布机制；
+- **HBuilderX 官方自定义基座热更**需要 `debug="true" + syncDebug="true"` 并打入 `debug-server-release.aar`；CLI 当前只写 `debug="true"`、模板也不带该 AAR，所以 CLI 基座不具备官方热更能力，仍采用「重建基座 + 覆盖安装」。
 
 ## 签名与 AppKey
 
@@ -511,7 +534,9 @@ uni-pack debug -p <项目> --logs
 
 ### AppKey
 
-AppKey 写入 `AndroidManifest.xml` 的 `dcloud_appkey` meta-data，必须与 DCloud 后台的 **appid + 包名 + 证书 SHA1** 绑定一致。
+AppKey 写入 `AndroidManifest.xml` 的 `dcloud_appkey` meta-data，必须与 DCloud 后台的 **appid + 包名（运行时转小写） + 证书 SHA1** 三者一致；AppKey 不区分 debug/release，但签名证书必须与申请时相同。
+
+因此给 debug 加 `applicationIdSuffix` 会改变包名，AppKey 校验必然失败，应用会提示「未配置appkey或配置错误」并退出。需要并存时不要改包名，而是单独申请 AppKey（后台是否支持同一 appid 多包名需自行确认）。
 
 常见现象：AppKey 无效时应用可能停在启动页，日志里几乎没有 JS 运行记录。排查：
 
@@ -544,6 +569,10 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | 找不到 HBuilderX | HBuilderX 项目需要它编译源码 | `init --hbuilderx <目录>` 或设置 `HBUILDERX_HOME` |
 | 包名不合法 | manifest 没写 packagename | `init --package <包名>` 或补 manifest |
 | App 停在启动页 | AppKey 无效或包名大小写不匹配 | 换真实 AppKey；重跑 `init` 统一小写包名 |
+| 加 `applicationIdSuffix` 后 AppKey 报错 | AppKey 绑定 appid + 包名 + 证书 SHA1，改了包名必然失败 | 不要加 suffix；debug 与正式包同包名同签名，或单独申请 AppKey |
+| debug 基座覆盖正式包会不会丢数据 | 同包名同签名覆盖安装保留 `/data/data`，不会丢 | 真实风险是现场正式包被替换；调试机与现场机分开 |
+| 能不能 adb push 热更 | 正式包资源在 APK assets 与私有目录，push 无效；只有 `debug="true"` 基座会读外部目录 | 正式热更走 wgt 安装；debug push 需 appid 一致并 force-stop 冷启动，属未文档化用法 |
+| 项目的 `build-wgt` 脚本还要吗 | `uni-pack wgt` 已覆盖版本化命名、清单与版本闸门 | 按「从项目自带 wgt 脚本迁移」适配下游后删除脚本 |
 | 提示“当前环境无法运行 VUE2 版本的 uni-app 应用” | 模板里的 `uniapp-v8-release.aar` 只带 Vue 3 运行时 | 本工具会为 Vue 2 自动改用 `SDK/libs` 完整版；确认 SDK 里有完整 AAR |
 | UTS 插件被跳过 | 产物里没有编译后的 Kotlin | 先用 HBuilderX 完整编译一次 |
 | UTS 日志提示 BuildConfig / dcloud_uts.dat | 运行时探测可选钩子 | 插件没有 `hooksClass/components` 时属正常提示 |
@@ -578,7 +607,8 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 - `nativeplugins` 支持 `aar` 集成与 `plugins` 注册；只有 `meta.config` 的云端插件需手工集成
 - UTS 插件依赖构建产物里的 Kotlin 源码；只有 `.uts` 源码时会跳过
 - UTS 模块优先使用 SDK 模板根 `build.gradle` 声明的 Kotlin 版本，模板没写时回退 Kotlin 2.2.0；coroutines 固定 1.8.1，首次构建需要联网
-- 调试采用「重建基座 + 覆盖安装」，不做 wgt 热更新
+- 调试采用「重建基座 + 覆盖安装」；`wgt` 只负责产出资源包，不在设备上安装/热更
+- 正式包热更需业务侧自行实现 wgt 下载与 `plus.runtime.install`；debug 基座的 adb push 热更属未文档化用法，不作为产品机制
 
 ## 已验证环境
 
