@@ -31,6 +31,7 @@ import {
 import { resolveSigning } from './signing.js'
 import { assertVersionMatch, readCompilerVersion, readSdkVersion, versionMismatchError } from './version.js'
 import { runWebBuild } from './webBuild.js'
+import { assertResourceVersion } from './resourceVersion.js'
 import { apkBaseName, findApk, publishApk } from './output.js'
 
 /**
@@ -122,6 +123,13 @@ export async function buildProject(input) {
   } else {
     resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined, vueVersion })).dir
   }
+
+  const resourceVersion = await assertResourceVersion({
+    resourcesDir,
+    expected: resolved,
+    skip: Boolean(options.skipResourceCheck),
+    logger,
+  })
 
   const utsPlugins = await scanUtsPlugins({ projectDir: project.projectDir, resourcesDir })
   const hasUts = utsPlugins.some((plugin) => plugin.usable)
@@ -247,7 +255,15 @@ export async function buildProject(input) {
 
   logger.success(`APK：${published.target}`)
   logger.info(`最新副本：${published.latest}`)
-  return { apk: published.target, latest: published.latest, sha256: published.sha256, resolved, workRoot }
+  return {
+    apk: published.target,
+    latest: published.latest,
+    sha256: published.sha256,
+    resourceVersion: resourceVersion.versionName,
+    resourceVersionCode: resourceVersion.versionCode,
+    resolved,
+    workRoot,
+  }
 }
 
 /**

@@ -174,6 +174,7 @@ uni-pack build [-p <dir>] [--mode release|debug] [--skip-web] [--out <dir>]
 | --- | --- |
 | `--mode` | 默认 `release`；`debug` 生成可调试基座 |
 | `--skip-web` | 跳过源码编译，复用已有产物 |
+| `--skip-resource-check` | 跳过「前端产物版本 = 项目 manifest 版本」校验；默认会拦下陈旧 dist |
 | `--out` | 覆盖 APK 输出目录 |
 | `--install` | 构建完成后安装到设备 |
 | `--device` | 指定设备序列号；不传时自动选择唯一在线设备 |
@@ -188,6 +189,8 @@ uni-pack wgt [-p <dir>] [--skip-web] [--out <dir>]
 ```
 
 默认输出到 `<项目>/unpackage/release/wgt/<appid>.wgt`。
+
+打包前会校验前端产物 `manifest.json` 的版本与项目 manifest 是否一致：不一致直接以退出码 `4` 失败，避免「新版本号 + 旧资源」。确认 `dist` 已是最新时可加 `--skip-resource-check` 跳过。
 
 ### debug
 
@@ -407,6 +410,7 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
 1. 编译源码
    - CLI：执行 `webBuild`。Vue 3 项目默认用 `build:app-android`（产物 `dist/build/app`），Vue 2 项目默认用 `build:app-plus`（产物 `dist/build/app-plus`），`init` 会根据 `package.json` 脚本自动选择
    - HBuilderX：按 `manifest.json` 的 `vueVersion` 选择编译器。Vue 3 用 `uniapp-cli-vite`，Vue 2 用 `uniapp-cli`，产物均为 `unpackage/dist/build/app-plus`
+   - 编译后校验产物 `manifest.json` 的 `version.name` / `version.code` 与项目 manifest 一致；bump 版本后忘记重新编译、或 `--skip-web` 用了旧 dist 都会在这里失败（退出码 `4`）
 2. 按项目版本匹配离线 SDK，把 `HBuilder-Integrate-AS` 复制到工作目录，**不改动共享 SDK**
 3. 复制 AAR
    - 模板 `simpleDemo/libs` 是该 SDK 版本的基线
@@ -535,7 +539,7 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | `0` | 成功 |
 | `2` | 配置错误 |
 | `3` | 预检失败 / doctor 有告警 |
-| `4` | 前端编译失败 |
+| `4` | 前端编译失败 / 前端产物版本与项目 manifest 不一致 |
 | `5` | Gradle 失败 |
 | `6` | 签名失败 |
 | `7` | 设备操作失败 |

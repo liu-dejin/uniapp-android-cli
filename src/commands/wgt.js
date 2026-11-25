@@ -3,7 +3,8 @@ import { loadConfig, resolveProject } from '../core/config.js'
 import { ensureDir, exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { Logger } from '../core/logger.js'
-import { detectVueVersion, readProjectManifest } from '../core/project.js'
+import { detectVueVersion, normalizeManifest, readProjectManifest } from '../core/project.js'
+import { assertResourceVersion } from '../core/resourceVersion.js'
 import { runWebBuild } from '../core/webBuild.js'
 import { writeWgt } from '../core/wgt.js'
 
@@ -17,6 +18,16 @@ export async function wgtCommand(options) {
   const { manifest, type } = await readProjectManifest(project.projectDir)
   project.type = type
   const vueVersion = await detectVueVersion(project.projectDir, manifest, type)
+  const resolved = normalizeManifest(
+    manifest,
+    {
+      appid: project.appid,
+      name: project.name,
+      versionName: project.versionName,
+      versionCode: project.versionCode,
+    },
+    { validate: false },
+  )
 
   const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { project }) : null
   let resourcesDir = path.resolve(
@@ -32,6 +43,13 @@ export async function wgtCommand(options) {
     resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined, vueVersion })).dir
   }
 
+  const resourceVersion = await assertResourceVersion({
+    resourcesDir,
+    expected: resolved,
+    skip: Boolean(options.skipResourceCheck),
+    logger,
+  })
+
   const appid = String(project.appid ?? manifest.appid)
   const outputDir = path.resolve(options.out ?? path.join(project.projectDir, 'unpackage/release/wgt'))
   await ensureDir(outputDir)
@@ -41,6 +59,13 @@ export async function wgtCommand(options) {
   logger.success(`wgt：${result.file}（${(result.size / 1024 / 1024).toFixed(1)} MB）`)
   logger.info(`sha256：${result.sha256}`)
 
-  logger.output('wgt', { ok: true, file: result.file, sha256: result.sha256, size: result.size })
+  logger.output('wgt', {
+    ok: true,
+    file: result.file,
+    sha256: result.sha256,
+    size: result.size,
+    resourceVersion: resourceVersion.versionName,
+    resourceVersionCode: resourceVersion.versionCode,
+  })
   return result
 }

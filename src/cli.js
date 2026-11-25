@@ -37,6 +37,7 @@ const SPECS = {
     ...COMMON,
     mode: { type: 'string' },
     'skip-web': { type: 'boolean' },
+    'skip-resource-check': { type: 'boolean' },
     out: { type: 'string' },
     install: { type: 'boolean' },
     device: { type: 'string' },
@@ -46,7 +47,12 @@ const SPECS = {
     'store-password': { type: 'string' },
     'key-password': { type: 'string' },
   },
-  wgt: { ...COMMON, 'skip-web': { type: 'boolean' }, out: { type: 'string' } },
+  wgt: {
+    ...COMMON,
+    'skip-web': { type: 'boolean' },
+    'skip-resource-check': { type: 'boolean' },
+    out: { type: 'string' },
+  },
   debug: {
     ...COMMON,
     install: { type: 'boolean' },
@@ -56,6 +62,7 @@ const SPECS = {
     base: { type: 'string' },
     build: { type: 'boolean' },
     'skip-web': { type: 'boolean' },
+    'skip-resource-check': { type: 'boolean' },
     'store-password': { type: 'string' },
     'key-password': { type: 'string' },
   },
@@ -154,8 +161,8 @@ function printHelp() {
                    [--android-sdk <dir>] [--jdk <dir>]
   uni-pack doctor  [-p <dir>] [--json]                环境自检
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
-                   [--skip-web] [--out <dir>] [--offline]
-  uni-pack wgt     [-p <dir>] [--skip-web] [--out <dir>]
+                   [--skip-web] [--skip-resource-check] [--out <dir>] [--offline]
+  uni-pack wgt     [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
   uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
   uni-pack devices                                    列出设备（同 device list）
   uni-pack device [list]                              列出 USB / 无线设备
