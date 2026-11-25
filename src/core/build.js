@@ -262,6 +262,7 @@ export async function buildProject(input) {
       javaHome,
       androidSdkDir: config.android.sdkDir,
       offline: Boolean(options.offline),
+      daemon: options.noDaemon !== true,
       signing,
       logger,
     })

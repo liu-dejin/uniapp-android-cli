@@ -186,6 +186,7 @@ uni-pack build [-p <dir>] [--mode release|debug] [--skip-web] [--out <dir>]
 | `--install` | 构建完成后安装到设备 |
 | `--device` | 指定设备序列号；不传时自动选择唯一在线设备 |
 | `--offline` | Gradle 使用 `--offline` |
+| `--no-daemon` | 关闭 Gradle 守护进程（CI 等一次性环境用）；默认开启以便复用增量结果 |
 | `--prune <n>` | 构建后按时间只保留最近 n 个时间戳 APK（`latest` 保留） |
 | `--skip-version-check` | 临时跳过编译器与 SDK 版本一致性检查 |
 | `--store-password` / `--key-password` | 签名密码，优先于环境变量与 `keystore.properties` |
@@ -451,6 +452,8 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
    - 补充该 SDK 的 `utsplugin-release.aar`
    - 首次构建需要联网下载 Kotlin Gradle 插件与运行时依赖
 7. 执行 `gradlew :simpleDemo:assembleRelease|assembleDebug`
+   - 默认开启 Gradle 守护进程、构建缓存与并行；首次构建会尝试配置缓存（`--configuration-cache`）
+   - 配置缓存与工程不兼容时自动回退为普通构建，并在工作目录写 `gradle-flags.json` 记录，后续不再尝试（删掉该文件可重新尝试）
 8. `apksigner verify` 校验，输出时间戳 APK、`latest` 硬链与构建清单；`--prune` 按需清理旧包
 
 工作目录：`<workDir>/<项目名>/gradle`，首次构建复制模板，之后复用；Gradle 日志在 `<workDir>/<项目名>/logs/`。默认会把重复的 D8 / Kotlin metadata 告警折叠成「N 条 + 首个样例」，失败时只打印 `FAILURE` / `What went wrong` 前后各 15 行；需要完整原始日志时加 `--verbose`。
@@ -551,6 +554,7 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | 日志里大量 `D8 ... Kotlin metadata` / `Should never be called` | DCloud AAR 由 Kotlin 2.2 编译，模板 AGP 8.7 自带的 R8/lint 只认 Kotlin 2.0；不影响产物 | 默认已折叠为摘要；需要原始栈加 `--verbose`。不要为此降级 Gradle/AGP 或替换 AAR |
 | 前端构建报 `C:\Windows\temp\esbuild-*: Access is denied` | 系统 TEMP 的 ACL 不可写，esbuild 无法清理临时文件 | 已自动把前端构建的 `TEMP`/`TMP` 指到 `<workDir>/<项目>/tmp`；仍失败时用 `UNI_PACK_TEMP` 指定可写目录 |
 | Gradle 失败只看到一段上下文 | 默认只打印 `FAILURE` / `What went wrong` 前后各 15 行 | hint 末尾有完整日志路径；需要更多上下文加 `--verbose` 重跑 |
+| 构建结束 Gradle 守护进程仍占内存 | 默认复用守护进程以加速下一次构建 | 一次性环境加 `--no-daemon`；需要立即释放时在工作目录执行 `gradlew --stop` |
 | JDK 不匹配 | 版本过低 | 设置 `JAVA_HOME` 指向 JDK 17+ |
 | 找不到 apksigner | build-tools 缺失 | 安装 build-tools，或配置 `android.buildTools` |
 
