@@ -218,6 +218,7 @@ export async function buildProject(input) {
     gradleRoot,
     mainModule: 'simpleDemo',
     compileSdkVersion,
+    kotlinVersion: templateDefaults.kotlinVersion,
     logger,
   })
   logger.success('配置写入完成')

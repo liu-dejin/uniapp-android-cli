@@ -109,6 +109,36 @@ test('扫描构建产物里的 UTS 插件并生成 Android Library 模块', asyn
   }
 })
 
+test('UTS 模块使用模板声明的 Kotlin 版本，而不是固定 2.2.0', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'uni-pack-uts-kotlin-'))
+  try {
+    const resourcesDir = path.join(dir, 'dist')
+    const pluginDir = path.join(resourcesDir, 'uni_modules', 'demo', 'utssdk', 'app-android')
+    await touch(pluginDir, ['src', 'index.kt'], 'package uts.sdk.modules.demo\nclass Demo\n')
+    const plugins = await scanUtsPlugins({ projectDir: dir, resourcesDir })
+    assert.equal(plugins[0].usable, true)
+
+    const gradleRoot = path.join(dir, 'gradle')
+    await makeGradleProject(gradleRoot)
+    await integrateUtsPlugins({
+      plugins,
+      gradleRoot,
+      mainModule: 'simpleDemo',
+      compileSdkVersion: 35,
+      kotlinVersion: '2.0.0',
+      logger,
+    })
+
+    const rootGradle = await readFile(path.join(gradleRoot, 'build.gradle'), 'utf8')
+    assert.match(rootGradle, /kotlin-gradle-plugin:2\.0\.0/)
+    assert.doesNotMatch(rootGradle, /kotlin-gradle-plugin:2\.2\.0/)
+    const appGradle = await readFile(path.join(gradleRoot, 'simpleDemo', 'build.gradle'), 'utf8')
+    assert.match(appGradle, /kotlin-stdlib:2\.0\.0/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('只有 .uts 源码（未编译）时不生成模块', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'uni-pack-uts-raw-'))
   try {

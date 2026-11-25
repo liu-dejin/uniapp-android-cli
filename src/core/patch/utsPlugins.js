@@ -65,6 +65,7 @@ export async function integrateUtsPlugins(options) {
   if (usable.length === 0) {
     return { modules: [] }
   }
+  logger.detail(`UTS Kotlin 版本：${kotlinVersion}（${options.kotlinVersion ? '模板声明' : '默认兜底'}）`)
 
   /** @type {Array<any>} */
   const modules = []

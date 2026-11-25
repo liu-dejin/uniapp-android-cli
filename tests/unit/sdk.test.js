@@ -83,6 +83,23 @@ android {
     const defaults = await readTemplateDefaults(dir)
     assert.equal(defaults.compileSdkVersion, 31)
     assert.equal(defaults.buildToolsVersion, '31.0.0')
+    assert.equal(defaults.kotlinVersion, undefined)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('模板根 build.gradle 声明的 kotlin-gradle-plugin 版本优先于默认兜底', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'uni-pack-template-kotlin-'))
+  try {
+    await touch(dir, ['simpleDemo', 'build.gradle'], 'android {\n    compileSdkVersion 35\n}')
+    await touch(
+      dir,
+      ['build.gradle'],
+      "buildscript {\n    dependencies {\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.0'\n    }\n}\n",
+    )
+    const defaults = await readTemplateDefaults(dir)
+    assert.equal(defaults.kotlinVersion, '2.2.0')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

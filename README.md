@@ -567,7 +567,7 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 - `app-plus.modules` 只自动映射常见模块的 AAR；未识别模块会提示，运行时缺模块需自行补充
 - `nativeplugins` 支持 `aar` 集成与 `plugins` 注册；只有 `meta.config` 的云端插件需手工集成
 - UTS 插件依赖构建产物里的 Kotlin 源码；只有 `.uts` 源码时会跳过
-- UTS 模块固定使用 Kotlin 2.2.0 / coroutines 1.8.1，首次构建需要联网
+- UTS 模块优先使用 SDK 模板根 `build.gradle` 声明的 Kotlin 版本，模板没写时回退 Kotlin 2.2.0；coroutines 固定 1.8.1，首次构建需要联网
 - 调试采用「重建基座 + 覆盖安装」，不做 wgt 热更新
 
 ## 已验证环境

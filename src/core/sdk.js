@@ -241,8 +241,9 @@ export async function findSdkForVersion(config, version, extraDirs = []) {
 
 /**
  * 老版本 SDK 的 compileSdk/buildTools 与新版不同，优先沿用 SDK 自带的模板值。
+ * Kotlin 版本同样以模板声明为准；模板没写 kotlin-gradle-plugin 时返回空，由调用方兜底。
  * @param {string} templateRoot
- * @returns {Promise<{ compileSdkVersion?: number, buildToolsVersion?: string }>}
+ * @returns {Promise<{ compileSdkVersion?: number, buildToolsVersion?: string, kotlinVersion?: string }>}
  */
 export async function readTemplateDefaults(templateRoot) {
   const file = path.join(templateRoot, 'simpleDemo', 'build.gradle')
@@ -252,9 +253,13 @@ export async function readTemplateDefaults(templateRoot) {
   const text = await readText(file)
   const compileSdk = Number(/compileSdkVersion\s+(\d+)/.exec(text)?.[1])
   const buildTools = /buildToolsVersion\s+'([^']+)'/.exec(text)?.[1]
+  const rootFile = path.join(templateRoot, 'build.gradle')
+  const rootText = (await exists(rootFile)) ? await readText(rootFile) : ''
+  const kotlinVersion = /kotlin-gradle-plugin:([0-9][\w.-]*)/.exec(rootText)?.[1]
   return {
     compileSdkVersion: Number.isFinite(compileSdk) ? compileSdk : undefined,
     buildToolsVersion: buildTools || undefined,
+    kotlinVersion: kotlinVersion || undefined,
   }
 }
 
