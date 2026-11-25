@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 
 /**
  * @typedef {Object} RunOptions
@@ -7,8 +8,40 @@ import path from 'node:path'
  * @property {Record<string, string | undefined>} [env]
  * @property {boolean} [allowFailure]
  * @property {(line: string) => void} [onLine]
+ * @property {(chunk: string, stream: 'stdout' | 'stderr') => void} [onChunk]
  * @property {'inherit' | 'pipe'} [stdio]
  */
+
+/**
+ * 子进程的 chunk 边界可能落在一行中间（尤其 Gradle 输出被 JVM 分块写出），
+ * 这里按 \n 缓冲残行，flush 时把最后一段不完整的行也交出去。
+ * @param {(line: string) => void} onLine
+ * @returns {{ push: (chunk: string) => void, flush: () => void }}
+ */
+export function createLineSplitter(onLine) {
+  let pending = ''
+  return {
+    push(chunk) {
+      pending += chunk
+      let index = pending.indexOf('\n')
+      while (index >= 0) {
+        const line = pending.slice(0, index).replace(/\r$/, '')
+        pending = pending.slice(index + 1)
+        if (line.trim()) {
+          onLine(line)
+        }
+        index = pending.indexOf('\n')
+      }
+    },
+    flush() {
+      const line = pending.replace(/\r$/, '')
+      pending = ''
+      if (line.trim()) {
+        onLine(line)
+      }
+    },
+  }
+}
 
 /**
  * @param {string} command
@@ -31,30 +64,46 @@ export function run(command, args, options = {}) {
 
     let stdout = ''
     let stderr = ''
-
-    /** @param {Buffer} chunk */
-    const consume = (chunk) => {
-      const text = chunk.toString()
-      if (!options.onLine) {
-        return text
-      }
-      for (const line of text.split(/\r?\n/)) {
-        if (line.trim()) {
-          options.onLine(line)
-        }
-      }
-      return text
+    const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
+    const splitters = {
+      stdout: options.onLine ? createLineSplitter(options.onLine) : null,
+      stderr: options.onLine ? createLineSplitter(options.onLine) : null,
     }
 
-    child.stdout?.on('data', (chunk) => {
-      stdout += consume(chunk)
-    })
-    child.stderr?.on('data', (chunk) => {
-      stderr += consume(chunk)
-    })
+    /**
+     * @param {'stdout' | 'stderr'} stream
+     * @param {Buffer} chunk
+     */
+    const consume = (stream, chunk) => {
+      const text = decoders[stream].write(chunk)
+      if (stream === 'stdout') {
+        stdout += text
+      } else {
+        stderr += text
+      }
+      options.onChunk?.(text, stream)
+      splitters[stream]?.push(text)
+    }
+
+    child.stdout?.on('data', (chunk) => consume('stdout', chunk))
+    child.stderr?.on('data', (chunk) => consume('stderr', chunk))
 
     child.on('error', reject)
     child.on('close', (code) => {
+      for (const stream of /** @type {const} */ (['stdout', 'stderr'])) {
+        const tail = decoders[stream].end()
+        if (tail) {
+          if (stream === 'stdout') {
+            stdout += tail
+          } else {
+            stderr += tail
+          }
+          options.onChunk?.(tail, stream)
+          splitters[stream]?.push(tail)
+        }
+        splitters[stream]?.flush()
+      }
+
       const exitCode = code ?? 1
       if (exitCode !== 0 && !options.allowFailure) {
         const error = new Error(`${command} 退出码 ${exitCode}`)

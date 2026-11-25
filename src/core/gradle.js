@@ -1,6 +1,8 @@
+import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
-import { ensureDir, writeText } from './fsx.js'
+import { ensureDir } from './fsx.js'
+import { GradleLogAggregator, formatFailureHint } from './gradleLog.js'
 import { run } from './process.js'
 
 /**
@@ -19,9 +21,22 @@ export async function runGradle(options) {
     args.push('--offline')
   }
 
-  const logLines = []
   const logFile = path.join(options.cwd, '..', 'logs', `gradle-${Date.now()}.log`)
+  await ensureDir(path.dirname(logFile))
 
+  const verbose = Boolean(options.logger.verbose)
+  const lines = []
+
+  const stream = createWriteStream(logFile)
+  /** @type {{ error: Error | null }} */
+  const logWrite = { error: null }
+  stream.on('error', (error) => {
+    logWrite.error = error
+  })
+  const aggregator = verbose ? null : new GradleLogAggregator({ onLine: (line) => stream.write(`${line}\n`) })
+
+  /** @type {unknown} */
+  let failure = null
   try {
     await run(options.gradlew, args, {
       cwd: options.cwd,
@@ -30,46 +45,66 @@ export async function runGradle(options) {
         ANDROID_HOME: options.androidSdkDir,
         ANDROID_SDK_ROOT: options.androidSdkDir,
       },
+      // 非 verbose 时只写聚合后的日志；verbose 时原样流式落盘
+      onChunk: verbose ? (chunk) => stream.write(chunk) : undefined,
       onLine: (line) => {
-        logLines.push(line)
-        options.logger.detail(line)
+        lines.push(line)
+        if (verbose) {
+          options.logger.detail(line)
+        } else {
+          aggregator?.push(line)
+        }
       },
     })
   } catch (error) {
-    const output = logLines.join('\n')
-    await ensureDir(path.dirname(logFile))
-    await writeText(logFile, output)
+    failure = error
+  }
+
+  const groups = aggregator ? aggregator.finish() : []
+  await closeStream(stream)
+
+  const writeError = logWrite.error
+  if (writeError) {
+    options.logger.warn(`Gradle 日志写入失败：${writeError.message}`)
+  }
+  if (!verbose) {
+    printWarningSummary(groups, options.logger)
+  }
+
+  if (failure) {
     throw new PackError('Gradle 构建失败', EXIT.GRADLE, {
-      hint: `${diagnose(output)}\n完整日志：${logFile}`,
-      cause: error,
+      hint: formatFailureHint({ lines, logFile }),
+      cause: failure,
     })
   }
 
-  await ensureDir(path.dirname(logFile))
-  await writeText(logFile, logLines.join('\n'))
   options.logger.success(`Gradle ${options.task} 完成`)
+  options.logger.info(`完整日志：${logFile}`)
   return logFile
 }
 
 /**
- * @param {string} output
+ * @param {Array<{ label: string, count: number, sample: string[] }>} groups
+ * @param {import('./logger.js').Logger} logger
  */
-function diagnose(output) {
-  if (/Could not resolve|Could not download|Could not GET/i.test(output)) {
-    return '依赖下载失败：检查网络，或先联网成功构建一次再使用 --offline'
+function printWarningSummary(groups, logger) {
+  if (groups.length === 0) {
+    return
   }
-  if (/Manifest merger failed/i.test(output)) {
-    return 'AndroidManifest 合并失败：检查包名、权限与模板内容是否冲突'
+  const total = groups.reduce((sum, group) => sum + group.count, 0)
+  logger.warn(`Gradle 告警：${total} 条同类告警已聚合为 ${groups.length} 类（看原始栈请用 --verbose 重跑）`)
+  for (const group of groups) {
+    logger.warn(`  ${group.label} ×${group.count}`)
+    if (group.sample[0]) {
+      logger.info(`    样例：${group.sample[0]}`)
+    }
   }
-  if (/Duplicate class/i.test(output)) {
-    return 'AAR 重复：检查 libs 目录是否有多余的重复依赖'
-  }
-  if (/SDK location not found|sdk\.dir/i.test(output)) {
-    return 'Android SDK 路径不正确：检查配置里的 android.sdkDir 与 local.properties'
-  }
-  if (/Unsupported class file major version|Unsupported Java/i.test(output)) {
-    return 'JDK 版本不匹配：确认 JAVA_HOME 指向 JDK 17+'
-  }
-  const failure = output.split('\n').filter((line) => /FAILURE|What went wrong|Caused by|error:/i.test(line)).slice(0, 6)
-  return failure.length > 0 ? failure.join('\n') : '查看完整 Gradle 日志定位问题'
+}
+
+/**
+ * @param {import('node:fs').WriteStream} stream
+ * @returns {Promise<void>}
+ */
+function closeStream(stream) {
+  return new Promise((resolve) => stream.end(resolve))
 }

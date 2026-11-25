@@ -140,7 +140,7 @@ uni-pack device
 通用参数：
 
 - `-p, --project <dir>`：项目目录；不传时使用当前目录
-- `--verbose`：输出详细构建日志
+- `--verbose`：输出全量 Gradle 原始日志（默认把重复的 D8 / Kotlin metadata 告警折叠成摘要）
 - `--json`：`doctor` / `build` / `wgt` 输出机器可读结果
 
 ### init
@@ -448,7 +448,7 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
 7. 执行 `gradlew :simpleDemo:assembleRelease|assembleDebug`
 8. `apksigner verify` 校验，输出时间戳 APK、`latest` 硬链与构建清单；`--prune` 按需清理旧包
 
-工作目录：`<workDir>/<项目名>/gradle`，每次构建前清空；Gradle 日志在 `<workDir>/<项目名>/logs/`。
+工作目录：`<workDir>/<项目名>/gradle`，每次构建前清空；Gradle 日志在 `<workDir>/<项目名>/logs/`。默认会把重复的 D8 / Kotlin metadata 告警折叠成「N 条 + 首个样例」，失败时只打印 `FAILURE` / `What went wrong` 前后各 15 行；需要完整原始日志时加 `--verbose`。
 
 ## 真机安装与调试
 
@@ -543,6 +543,8 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | 没有发现设备 | USB 调试未开 / 未授权 / 多设备 | 检查 `adb devices`；多设备用 `--device` |
 | 无线配对超时 | 不同 Wi-Fi、VPN、防火墙、mDNS 不支持 | 同网段、关代理、放行防火墙、升级 platform-tools |
 | Gradle 依赖下载失败 | 网络问题 | 联网成功构建一次后再用 `--offline` |
+| 日志里大量 `D8 ... Kotlin metadata` / `Should never be called` | DCloud AAR 由 Kotlin 2.2 编译，模板 AGP 8.7 自带的 R8/lint 只认 Kotlin 2.0；不影响产物 | 默认已折叠为摘要；需要原始栈加 `--verbose`。不要为此降级 Gradle/AGP 或替换 AAR |
+| Gradle 失败只看到一段上下文 | 默认只打印 `FAILURE` / `What went wrong` 前后各 15 行 | hint 末尾有完整日志路径；需要更多上下文加 `--verbose` 重跑 |
 | JDK 不匹配 | 版本过低 | 设置 `JAVA_HOME` 指向 JDK 17+ |
 | 找不到 apksigner | build-tools 缺失 | 安装 build-tools，或配置 `android.buildTools` |
 
