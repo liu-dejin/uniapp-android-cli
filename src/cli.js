@@ -188,6 +188,7 @@ function printHelp() {
   HBUILDERX_HOME  HBuilderX 安装目录
   ANDROID_HOME    Android SDK 根目录
   JAVA_HOME       JDK 17+ 根目录
+  UNI_PACK_TEMP   前端构建临时目录（默认 <workDir>/<项目>/tmp）
 
 配置：~/.uniapp-android-cli/config.json（项目内 uni-pack.config.json 可覆盖项目级字段）
 `)

@@ -201,6 +201,7 @@ export async function resolveHbuilderx(config, options = {}) {
  * @param {string} options.inputDir
  * @param {string} options.outputDir
  * @param {number | string} [options.vueVersion] 2 或 3；默认 3
+ * @param {string} [options.tempDir] 子进程 TEMP/TMP 指向的可写临时目录
  * @param {import('./logger.js').Logger} options.logger
  */
 export async function runHbuilderxBuild(options) {
@@ -228,6 +229,7 @@ export async function runHbuilderxBuild(options) {
         UNI_OUTPUT_DIR: outputDir,
         UNI_PLATFORM: compiler.platform,
         NODE_ENV: 'production',
+        ...(options.tempDir ? { TEMP: options.tempDir, TMP: options.tempDir } : {}),
       },
       onLine: (line) => logger.detail(line),
     })

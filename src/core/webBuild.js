@@ -1,15 +1,16 @@
 import path from 'node:path'
 import { PackError, EXIT } from './errors.js'
-import { exists, readJson } from './fsx.js'
+import { ensureDir, exists, readJson } from './fsx.js'
 import { runHbuilderxBuild } from './hbuilderx.js'
 import { run } from './process.js'
+import { buildTempEnv } from './workdir.js'
 
 const REQUIRED = ['manifest.json', 'app-service.js', 'app-config.js', '__uniappview.html']
 
 /**
  * @param {any} project
  * @param {import('./logger.js').Logger} logger
- * @param {{ hbuilderx?: { root: string, version: string }, vueVersion?: 2 | 3 }} [context]
+ * @param {{ hbuilderx?: { root: string, version: string }, vueVersion?: 2 | 3, tempDir?: string }} [context]
  * @returns {Promise<{ dir: string, manifest: any }>}
  */
 export async function runWebBuild(project, logger, context = {}) {
@@ -18,6 +19,11 @@ export async function runWebBuild(project, logger, context = {}) {
     project.projectDir,
     String(config.outputDir ?? (project.type === 'hbuilderx' ? 'unpackage/dist/build/app-plus' : 'dist/build/app')),
   )
+  const tempDir = context.tempDir ? String(context.tempDir) : ''
+  if (tempDir) {
+    // 先建好目录，再把它作为子进程的 TEMP/TMP，避免系统 TEMP 的 ACL 问题
+    await ensureDir(tempDir)
+  }
 
   if (project.type === 'hbuilderx') {
     const hbuilderx = context.hbuilderx
@@ -32,6 +38,7 @@ export async function runWebBuild(project, logger, context = {}) {
       inputDir: String(project.inputDir ?? project.projectDir),
       outputDir: dir,
       vueVersion: context.vueVersion ?? 3,
+      tempDir: tempDir || undefined,
       logger,
     })
   } else {
@@ -42,6 +49,7 @@ export async function runWebBuild(project, logger, context = {}) {
     try {
       await run(command, args, {
         cwd: project.projectDir,
+        env: tempDir ? buildTempEnv(tempDir) : undefined,
         onLine: (line) => logger.detail(line),
       })
     } catch (error) {

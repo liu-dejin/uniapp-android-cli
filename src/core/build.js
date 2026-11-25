@@ -32,6 +32,7 @@ import { resolveSigning } from './signing.js'
 import { assertVersionMatch, readCompilerVersion, readSdkVersion, versionMismatchError } from './version.js'
 import { runWebBuild } from './webBuild.js'
 import { assertResourceVersion } from './resourceVersion.js'
+import { resolveBuildTempDir, resolveWorkRoot } from './workdir.js'
 import { apkBaseName, findApk, publishApk } from './output.js'
 
 /**
@@ -117,6 +118,8 @@ export async function buildProject(input) {
     logger.warn(`版本不一致：uni-app ${versions.compiler ?? '未知'} / SDK ${versions.sdk ?? '未知'}（已跳过检查）`)
   }
 
+  const workRoot = resolveWorkRoot(config, project)
+  const buildTemp = resolveBuildTempDir(workRoot)
   let resourcesDir = path.resolve(
     project.projectDir,
     String(project.webBuild?.outputDir ?? (type === 'hbuilderx' ? 'unpackage/dist/build/app-plus' : 'dist/build/app')),
@@ -127,7 +130,13 @@ export async function buildProject(input) {
     }
     logger.info(`跳过前端构建，使用 ${resourcesDir}`)
   } else {
-    resourcesDir = (await runWebBuild(project, logger, { hbuilderx: hbuilderx ?? undefined, vueVersion })).dir
+    resourcesDir = (
+      await runWebBuild(project, logger, {
+        hbuilderx: hbuilderx ?? undefined,
+        vueVersion,
+        tempDir: buildTemp.tempDir,
+      })
+    ).dir
   }
 
   const resourceVersion = await assertResourceVersion({
@@ -153,7 +162,6 @@ export async function buildProject(input) {
   )
   const tools = await resolveAndroidTools(config, { preferredBuildTools: buildToolsVersion })
   const javaHome = await resolveJavaHome(config)
-  const workRoot = path.join(config.workDir, sanitize(project.name ?? 'project'))
   const gradleRoot = path.join(workRoot, 'gradle')
 
   logger.step('准备构建工程')
@@ -397,11 +405,4 @@ function firstNonEmpty(...values) {
     }
   }
   return ''
-}
-
-/**
- * @param {string} value
- */
-function sanitize(value) {
-  return value.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'project'
 }

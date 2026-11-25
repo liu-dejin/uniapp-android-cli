@@ -55,6 +55,7 @@
 | `HBUILDERX_HOME` | HBuilderX 安装目录 |
 | `ANDROID_HOME` | Android SDK 根目录（也认 `ANDROID_SDK_ROOT`） |
 | `JAVA_HOME` | JDK 17+ 根目录 |
+| `UNI_PACK_TEMP` | 前端构建子进程的临时目录；默认 `<workDir>/<项目>/tmp`，系统 TEMP 有 ACL 问题时可用它显式指定 |
 
 ## 支持的项目类型
 
@@ -544,6 +545,7 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | 无线配对超时 | 不同 Wi-Fi、VPN、防火墙、mDNS 不支持 | 同网段、关代理、放行防火墙、升级 platform-tools |
 | Gradle 依赖下载失败 | 网络问题 | 联网成功构建一次后再用 `--offline` |
 | 日志里大量 `D8 ... Kotlin metadata` / `Should never be called` | DCloud AAR 由 Kotlin 2.2 编译，模板 AGP 8.7 自带的 R8/lint 只认 Kotlin 2.0；不影响产物 | 默认已折叠为摘要；需要原始栈加 `--verbose`。不要为此降级 Gradle/AGP 或替换 AAR |
+| 前端构建报 `C:\Windows\temp\esbuild-*: Access is denied` | 系统 TEMP 的 ACL 不可写，esbuild 无法清理临时文件 | 已自动把前端构建的 `TEMP`/`TMP` 指到 `<workDir>/<项目>/tmp`；仍失败时用 `UNI_PACK_TEMP` 指定可写目录 |
 | Gradle 失败只看到一段上下文 | 默认只打印 `FAILURE` / `What went wrong` 前后各 15 行 | hint 末尾有完整日志路径；需要更多上下文加 `--verbose` 重跑 |
 | JDK 不匹配 | 版本过低 | 设置 `JAVA_HOME` 指向 JDK 17+ |
 | 找不到 apksigner | build-tools 缺失 | 安装 build-tools，或配置 `android.buildTools` |
