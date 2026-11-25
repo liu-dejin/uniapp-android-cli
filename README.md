@@ -124,10 +124,16 @@ uni-pack device
 
 默认输出到项目 `apk/`：
 
-```text
-<名称>_<版本>_<版本号>_<release|debug>_<YYYYMMDD_HHMM>.apk
-<名称>_<版本>_<版本号>_<release|debug>_latest.apk
-```
+| 文件 | 说明 |
+| --- | --- |
+| `<名称>_<版本>_<版本号>_<release\|debug>_<YYYYMMDD_HHMM>.apk` | 每次构建的时间戳副本 |
+| `<名称>_<版本>_<版本号>_<release\|debug>_latest.apk` | 指向最近一次构建的硬链接，零复制 |
+| `<...>.apk.json` | 该 APK 的构建记录 + sha256 + builtAt |
+| `builds.jsonl` | 全部构建记录，一行一条，便于脚本或看板消费 |
+
+`<名称>` 默认取 manifest 的 `name`。如果希望改名不影响产物前缀，在项目级配置里写 `outputPrefix` 固定它。
+
+`--prune <n>` 会在构建完成后按时间只保留最近 n 个时间戳 APK（按 mode 分别计算，`latest` 与 `builds.jsonl` 永远保留）。
 
 ## 命令参考
 
@@ -179,6 +185,7 @@ uni-pack build [-p <dir>] [--mode release|debug] [--skip-web] [--out <dir>]
 | `--install` | 构建完成后安装到设备 |
 | `--device` | 指定设备序列号；不传时自动选择唯一在线设备 |
 | `--offline` | Gradle 使用 `--offline` |
+| `--prune <n>` | 构建后按时间只保留最近 n 个时间戳 APK（`latest` 保留） |
 | `--skip-version-check` | 临时跳过编译器与 SDK 版本一致性检查 |
 | `--store-password` / `--key-password` | 签名密码，优先于环境变量与 `keystore.properties` |
 
@@ -332,6 +339,7 @@ uni-pack version
 | `projects.<key>.package` | 包名；manifest 里有 `packagename` 时以 manifest 为准 |
 | `projects.<key>.appKey` | DCloud AppKey |
 | `projects.<key>.outputDir` | APK 输出目录，默认 `<项目>/apk` |
+| `projects.<key>.outputPrefix` | APK 文件名前缀，默认取 manifest 的 `name`；固定它可让展示名改动不影响产物前缀 |
 | `projects.<key>.webBuild` | CLI 项目的前端构建命令与产物目录 |
 | `projects.<key>.signing` | 签名配置 |
 | `projects.<key>.debug.launchActivity` | 启动 Activity，默认 `io.dcloud.PandoraEntry` |
@@ -438,7 +446,7 @@ CLI 版本解码规则：取横线后前 5 位 `50304`，依次为主、次、�
    - 补充该 SDK 的 `utsplugin-release.aar`
    - 首次构建需要联网下载 Kotlin Gradle 插件与运行时依赖
 7. 执行 `gradlew :simpleDemo:assembleRelease|assembleDebug`
-8. `apksigner verify` 校验并输出 APK
+8. `apksigner verify` 校验，输出时间戳 APK、`latest` 硬链与构建清单；`--prune` 按需清理旧包
 
 工作目录：`<workDir>/<项目名>/gradle`，每次构建前清空；Gradle 日志在 `<workDir>/<项目名>/logs/`。
 

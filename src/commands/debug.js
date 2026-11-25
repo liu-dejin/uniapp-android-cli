@@ -33,7 +33,11 @@ export async function debugCommand(options) {
 
   let baseApk = options.base ? path.resolve(options.base) : ''
   if (!baseApk) {
-    const baseName = apkBaseName(project.name ?? resolved.name, resolved.versionName, resolved.versionCode)
+    const baseName = apkBaseName(
+      String(project.outputPrefix ?? resolved.name),
+      resolved.versionName,
+      resolved.versionCode,
+    )
     const candidate = path.join(path.resolve(project.outputDir), `${baseName}_debug_latest.apk`)
     baseApk = (await exists(candidate)) ? candidate : ''
   }

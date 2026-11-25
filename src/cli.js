@@ -42,6 +42,7 @@ const SPECS = {
     install: { type: 'boolean' },
     device: { type: 'string' },
     offline: { type: 'boolean' },
+    prune: { type: 'string' },
     'keep-workdir': { type: 'boolean' },
     'skip-version-check': { type: 'boolean' },
     'store-password': { type: 'string' },
@@ -63,6 +64,7 @@ const SPECS = {
     build: { type: 'boolean' },
     'skip-web': { type: 'boolean' },
     'skip-resource-check': { type: 'boolean' },
+    prune: { type: 'string' },
     'store-password': { type: 'string' },
     'key-password': { type: 'string' },
   },
@@ -162,6 +164,7 @@ function printHelp() {
   uni-pack doctor  [-p <dir>] [--json]                环境自检
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
                    [--skip-web] [--skip-resource-check] [--out <dir>] [--offline]
+                   [--prune <n>]
   uni-pack wgt     [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
   uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
   uni-pack devices                                    列出设备（同 device list）

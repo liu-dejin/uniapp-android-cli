@@ -45,6 +45,12 @@ import { apkBaseName, findApk, publishApk } from './output.js'
 export async function buildProject(input) {
   const { config, project, mode, options, logger } = input
   const debug = mode === 'debug'
+  const prune = options.prune === undefined ? undefined : Number(options.prune)
+  if (prune !== undefined && (!Number.isInteger(prune) || prune < 0)) {
+    throw new PackError(`--prune 需要一个非负整数，收到：${String(options.prune)}`, EXIT.CONFIG, {
+      hint: '例如 --prune 5 表示每个 mode 只保留最近 5 个时间戳 APK，latest 永远保留',
+    })
+  }
 
   const { manifest, file, type, inputDir } = await readProjectManifest(project.projectDir)
   project.type = type
@@ -231,13 +237,15 @@ export async function buildProject(input) {
   const apk = await findApk(apkDir, mode)
   await verifySignature(tools.apksigner, apk, logger)
 
-  const baseName = apkBaseName(project.name ?? resolved.name, resolved.versionName, resolved.versionCode)
+  const baseName = apkBaseName(String(project.outputPrefix ?? resolved.name), resolved.versionName, resolved.versionCode)
   const published = await publishApk({
     apk,
     outputDir: path.resolve(String(options.out ?? project.outputDir)),
     baseName,
     mode,
     workDir: workRoot,
+    logger,
+    prune,
     record: {
       appid: resolved.appid,
       packageName: resolved.packageName,
@@ -255,10 +263,13 @@ export async function buildProject(input) {
 
   logger.success(`APK：${published.target}`)
   logger.info(`最新副本：${published.latest}`)
+  logger.info(`产物清单：${published.recordFile}`)
   return {
     apk: published.target,
     latest: published.latest,
     sha256: published.sha256,
+    apkRecord: published.recordFile,
+    latestLinked: published.latestLinked,
     resourceVersion: resourceVersion.versionName,
     resourceVersionCode: resourceVersion.versionCode,
     resolved,

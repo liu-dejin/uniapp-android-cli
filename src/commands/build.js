@@ -36,6 +36,8 @@ export async function buildCommand(options) {
     apk: result.apk,
     latest: result.latest,
     sha256: result.sha256,
+    apkRecord: result.apkRecord,
+    latestLinked: result.latestLinked,
     resourceVersion: result.resourceVersion,
     resourceVersionCode: result.resourceVersionCode,
     workDir: path.join(result.workRoot, 'gradle'),
