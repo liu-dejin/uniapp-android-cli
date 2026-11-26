@@ -87,7 +87,7 @@ test('调试基座选项只接受约定值', () => {
 })
 
 test('init 结果拆分：共享字段进项目配置，本机路径进用户配置', () => {
-  const projectDir = path.join('C:', 'projects', 'demo')
+  const projectDir = path.resolve('virtual', 'projects', 'demo')
   const { projectConfig, userEntry } = splitInitConfig({
     projectDir,
     type: 'cli',
