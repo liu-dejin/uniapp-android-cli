@@ -6,7 +6,7 @@ import { loadConfig, resolveProject } from '../core/config.js'
 import { PackError, EXIT } from '../core/errors.js'
 import { ensureDir, exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
-import { buildLaunchArgs, cliPath, ensureHbuilderxRunning, runLaunch } from '../core/hbuilderxCli.js'
+import { buildLaunchArgs, cliPath, ensureHbuilderxRunning, localCustomBasePath, runLaunch } from '../core/hbuilderxCli.js'
 import { Logger } from '../core/logger.js'
 import { apkBaseName, resolveApkPrefix } from '../core/output.js'
 import { normalizeManifest, readProjectManifest } from '../core/project.js'
@@ -92,6 +92,23 @@ async function runHbuilderxDebug(input) {
   const customType = String(options.customType ?? 'local').toLowerCase()
   if (playground === 'custom' && customType !== 'local' && customType !== 'device') {
     throw new PackError(`--custom-type 只支持 local 或 device，收到：${options.customType}`, EXIT.CONFIG)
+  }
+
+  // 本地自定义基座：先自己 adb install -r。
+  // HBuilderX 只按包名+版本判断“基座已是最新”，同版本的正式包会让它误判并跳过安装。
+  if (playground === 'custom' && customType === 'local') {
+    const baseApk = localCustomBasePath(project.projectDir)
+    if (!(await exists(baseApk))) {
+      throw new PackError(`找不到本地自定义基座：${baseApk}`, EXIT.PREFLIGHT, {
+        hint: '先在 HBuilderX 制作自定义基座（生成 unpackage/debug/android_debug.apk），或改用 --custom-type device',
+      })
+    }
+    const tools = await resolveAndroidTools(config)
+    const devices = await listDevices(tools.adb)
+    const device = pickDevice(devices, options.device)
+    logger.info(`安装本地自定义基座：${baseApk}`)
+    await installApk(tools.adb, baseApk, device.serial)
+    options.device = device.serial
   }
 
   const hbuilderx = await resolveHbuilderx(config, { project })

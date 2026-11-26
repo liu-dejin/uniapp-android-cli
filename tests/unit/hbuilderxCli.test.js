@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   buildLaunchArgs,
   cliPath,
+  localCustomBasePath,
   parseHbuilderxCliVersion,
   supportsLaunch,
 } from '../../src/core/hbuilderxCli.js'
@@ -28,6 +29,13 @@ test('launch 需要 HBuilderX 5.0+', () => {
 test('cli 路径与 platform 对应', () => {
   const cli = cliPath('C:/Soft/HBuilderX')
   assert.equal(path.basename(cli), process.platform === 'win32' ? 'cli.exe' : 'cli')
+})
+
+test('本地自定义基座使用 HBuilderX 约定路径', () => {
+  assert.equal(
+    localCustomBasePath('C:/project'),
+    path.join('C:/project', 'unpackage', 'debug', 'android_debug.apk'),
+  )
 })
 
 test('launch 参数：项目/设备/自定义基座/界面模式', () => {

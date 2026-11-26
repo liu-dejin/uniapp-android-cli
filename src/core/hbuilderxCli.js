@@ -46,6 +46,15 @@ export function cliPath(root) {
 }
 
 /**
+ * HBuilderX 本地自定义基座的约定位置。
+ * @param {string} projectDir
+ * @returns {string}
+ */
+export function localCustomBasePath(projectDir) {
+  return path.join(projectDir, 'unpackage', 'debug', 'android_debug.apk')
+}
+
+/**
  * @param {Object} options
  * @param {string} options.projectDir
  * @param {string} [options.deviceId]

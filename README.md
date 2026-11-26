@@ -255,7 +255,9 @@ uni-pack debug -p <项目> --hbuilderx --device <serial> --logs
 
 - 保存代码后 HBuilderX 自动差量编译并同步到已安装基座，终端**直接输出项目 `console` 日志**（不是原生日志），`Ctrl+C` 结束；
 - `--playground standard`（默认）使用 HBuilderX 标准基座；
-- `--playground custom --custom-type local` 使用本地自定义基座，`--custom-type device` 使用设备上已安装的基座（包名取自 manifest）；
+- `--playground custom --custom-type local`：使用 `<项目>/unpackage/debug/android_debug.apk`，uni-pack 会先 `adb install -r` 强制安装，避免 HBuilderX 把同包名同版本的正式包误判成「基座已是最新」而跳过；
+- `--playground custom --custom-type device`：直接使用设备上已安装的自定义基座（适合已经手动装好基座/多设备场景）；
+- 自定义基座里没有新加的 UTS/原生插件时，运行会提示「当前运行的基座不包含原生插件 XXX」，需要在 HBuilderX 重新制作包含该插件的基座；
 - `--ui`：交给 HBuilderX 界面运行（需 5.11+）；
 - `--push` / `--base` / `--install` 在 `--hbuilderx` 模式下会被忽略（由 HBuilderX 负责安装与启动）。
 
