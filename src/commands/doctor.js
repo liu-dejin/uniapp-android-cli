@@ -142,6 +142,14 @@ export async function doctorCommand(options) {
   }
 
   const failed = checks.filter((check) => !check.ok)
+  const blocking = failed.filter((check) => check.name !== 'ADB 设备')
+  if (project) {
+    if (blocking.length === 0) {
+      logger.info(`下一步：uni-pack build -p "${project.projectDir}" --mode release`)
+    } else {
+      logger.info('先按上面的告警处理，再执行 build')
+    }
+  }
   logger.output('doctor', { ok: failed.length === 0, checks })
   if (failed.length > 0) {
     process.exitCode = 3
