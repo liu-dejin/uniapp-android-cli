@@ -13,6 +13,7 @@ import { copyTree, ensureDir, exists, readText, writeText } from '../fsx.js'
  * @property {boolean} debug
  * @property {string} projectDir
  * @property {any} [manifest]          项目 manifest，用于读取图标与启动图路径
+ * @property {import('../logger.js').Logger} [logger]
  */
 
 /**
@@ -30,7 +31,7 @@ export async function applyAssets(context) {
   await copyTree(context.resourcesDir, wwwDir, (relative) => /^uni_modules\/[^/]+\/utssdk(\/|$)/.test(relative))
   await writeControlFile(assetsData, context)
   await patchStrings(mainDir, context.appName)
-  await applyIcons(mainDir, context.projectDir, context.manifest)
+  await applyIcons(mainDir, context.projectDir, context.manifest, context.logger)
 }
 
 /**
@@ -61,54 +62,84 @@ const CLIENT_ICON_FILES = { hdpi: '72x72.png', xhdpi: '96x96.png', xxhdpi: '144x
 
 /**
  * 图标与启动图优先用 manifest 声明的路径（CLI 与 HBuilderX 都适用），
- * 其次回退到两种项目各自的默认目录。
+ * 其次回退到两种项目各自的默认目录。只配置部分密度时，用已有最高密度补齐；
+ * 完全没配置时保留 SDK 模板资源，并提示使用默认图。
  * @param {string} mainDir
  * @param {string} projectDir
  * @param {any} [manifest]
+ * @param {import('../logger.js').Logger} [logger]
  */
-async function applyIcons(mainDir, projectDir, manifest) {
+async function applyIcons(mainDir, projectDir, manifest, logger) {
   const distribute = manifest?.['app-plus']?.distribute ?? {}
   const manifestIcons = distribute.icons?.android ?? {}
   const manifestSplash = distribute.splashscreen?.android ?? {}
 
-  for (const density of ICON_DENSITIES) {
-    const source = await firstExisting([
-      resolveMaybeRelative(projectDir, manifestIcons[density]),
-      path.join(projectDir, 'src/static/app/icons', CLIENT_ICON_FILES[density]),
-      path.join(projectDir, 'unpackage/res/icons', CLIENT_ICON_FILES[density]),
-    ])
-    if (source) {
-      await copyFile(source, path.join(mainDir, `res/drawable-${density}/icon.png`))
-    }
-
-    const splash = await firstExisting([
-      resolveMaybeRelative(projectDir, manifestSplash[density]),
-      path.join(projectDir, 'src/static/app/splash', `splash-${density}.png`),
-      path.join(projectDir, 'unpackage/res/splash/splash.png'),
-      path.join(projectDir, 'unpackage/res/splash', `splash-${density}.png`),
-    ])
-    if (splash) {
-      await copyFile(splash, path.join(mainDir, `res/drawable-${density}/splash.png`))
-    }
-  }
-
-  const fallbackIcon = await firstExisting([
-    resolveMaybeRelative(projectDir, manifestIcons.xxxhdpi),
-    path.join(projectDir, 'src/static/app/icons/192x192.png'),
-    path.join(projectDir, 'unpackage/res/icons/192x192.png'),
+  const icons = await resolveDensitySources(projectDir, manifestIcons, (density) => [
+    path.join(projectDir, 'src/static/app/icons', CLIENT_ICON_FILES[density]),
+    path.join(projectDir, 'unpackage/res/icons', CLIENT_ICON_FILES[density]),
   ])
-  if (fallbackIcon) {
-    await copyFile(fallbackIcon, path.join(mainDir, 'res/drawable/icon.png'))
-  }
-
-  const fallbackSplash = await firstExisting([
-    resolveMaybeRelative(projectDir, manifestSplash.xxhdpi),
-    path.join(projectDir, 'src/static/app/splash/splash-xxhdpi.png'),
+  const splash = await resolveDensitySources(projectDir, manifestSplash, (density) => [
+    path.join(projectDir, 'src/static/app/splash', `splash-${density}.png`),
     path.join(projectDir, 'unpackage/res/splash/splash.png'),
+    path.join(projectDir, 'unpackage/res/splash', `splash-${density}.png`),
   ])
-  if (fallbackSplash) {
-    await copyFile(fallbackSplash, path.join(mainDir, 'res/drawable/splash.png'))
+
+  const bestIcon = bestSource(icons)
+  const bestSplash = bestSource(splash)
+
+  for (const density of ICON_DENSITIES) {
+    const icon = icons[density] || bestIcon
+    if (icon) {
+      await copyFile(icon, path.join(mainDir, `res/drawable-${density}/icon.png`))
+    }
+
+    const splashSource = splash[density] || bestSplash
+    if (splashSource) {
+      await copyFile(splashSource, path.join(mainDir, `res/drawable-${density}/splash.png`))
+    }
   }
+
+  if (bestIcon) {
+    await copyFile(bestIcon, path.join(mainDir, 'res/drawable/icon.png'))
+  } else {
+    logger?.warn('未配置应用图标（app-plus.distribute.icons.android），使用 SDK 默认图标（DCloud），发布前请替换')
+  }
+  if (bestSplash) {
+    await copyFile(bestSplash, path.join(mainDir, 'res/drawable/splash.png'))
+  } else {
+    logger?.warn('未配置启动图（app-plus.distribute.splashscreen.android），使用 SDK 默认启动图，发布前请替换')
+  }
+}
+
+/**
+ * @param {string} projectDir
+ * @param {Record<string, any>} declared
+ * @param {(density: string) => string[]} defaults
+ * @returns {Promise<Record<string, string>>}
+ */
+async function resolveDensitySources(projectDir, declared, defaults) {
+  /** @type {Record<string, string>} */
+  const sources = {}
+  for (const density of ICON_DENSITIES) {
+    const source = await firstExisting([resolveMaybeRelative(projectDir, declared[density]), ...defaults(density)])
+    if (source) {
+      sources[density] = source
+    }
+  }
+  return sources
+}
+
+/**
+ * @param {Record<string, string>} sources
+ * @returns {string}
+ */
+function bestSource(sources) {
+  for (const density of [...ICON_DENSITIES].reverse()) {
+    if (sources[density]) {
+      return sources[density]
+    }
+  }
+  return ''
 }
 
 /**

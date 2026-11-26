@@ -236,6 +236,7 @@ export async function buildProject(input) {
     debug,
     projectDir: project.projectDir,
     manifest,
+    logger,
   })
   await applyNativePlugins({
     projectDir: project.projectDir,
