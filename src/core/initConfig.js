@@ -75,6 +75,18 @@ export function validateConfirm(value) {
 }
 
 /**
+ * 最终确认必须显式回答：回车不默认同意，避免手快直接写配置。
+ * @param {string} value
+ * @returns {Validation}
+ */
+export function validateExplicitConfirm(value) {
+  if (/^y(es)?$/i.test(value) || /^n(o)?$/i.test(value)) {
+    return { ok: true, value: value.toLowerCase() }
+  }
+  return { ok: false, message: '请输入 y 或 n（回车不会默认确认）' }
+}
+
+/**
  * 项目内路径尽量写成相对路径，方便提交到仓库；项目外保留绝对路径。
  * @param {string} projectDir
  * @param {string} value

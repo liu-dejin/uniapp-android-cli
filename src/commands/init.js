@@ -10,6 +10,7 @@ import {
   toProjectRelative,
   validateAppKey,
   validateConfirm,
+  validateExplicitConfirm,
   validatePackageName,
   validateRequired,
 } from '../core/initConfig.js'
@@ -146,7 +147,10 @@ export async function initCommand(options) {
       androidSdkPath = envAnswers.androidSdkPath
       jdkPath = envAnswers.jdkPath
 
-      const confirmed = await prompt.ask({ question: '确认写入以上配置？[Y/n]', validate: validateConfirm })
+      const confirmed = await prompt.ask({
+        question: '确认写入以上配置？(y/n)',
+        validate: validateExplicitConfirm,
+      })
       if (/^n/.test(confirmed)) {
         logger.info('已取消，未写入任何配置')
         return { key, config, cancelled: true }

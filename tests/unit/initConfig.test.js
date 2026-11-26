@@ -9,6 +9,7 @@ import {
   toProjectRelative,
   validateAppKey,
   validateConfirm,
+  validateExplicitConfirm,
   validatePackageName,
   validateRequired,
 } from '../../src/core/initConfig.js'
@@ -50,6 +51,15 @@ test('文件校验支持相对项目目录，路径不存在时给提示', async
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('最终确认必须显式 y/n，回车无效', () => {
+  assert.equal(validateExplicitConfirm('y').ok, true)
+  assert.equal(validateExplicitConfirm('N').ok, true)
+  assert.equal(validateExplicitConfirm('').ok, false)
+  assert.match(String(validateExplicitConfirm('').message), /回车不会默认确认/)
+  assert.equal(validateExplicitConfirm('yes').value, 'yes')
+  assert.equal(validateExplicitConfirm('no').value, 'no')
 })
 
 test('项目内路径写相对路径，项目外保留绝对路径', async () => {
