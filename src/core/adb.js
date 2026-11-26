@@ -165,14 +165,59 @@ export async function listDevices(adb) {
 }
 
 /**
+ * 按完整序列号、型号或唯一子串找设备。多设备时避免手抄长序列号。
  * @param {Device[]} devices
- * @param {string} [serial]
+ * @param {string | undefined} input
+ * @returns {Device | null}
  */
-export function pickDevice(devices, serial) {
-  if (serial) {
-    const match = devices.find((device) => device.serial === serial)
+export function matchDevice(devices, input) {
+  const query = String(input ?? '').trim()
+  if (!query) {
+    return null
+  }
+  const exact = devices.find((device) => device.serial === query)
+  if (exact) {
+    return exact
+  }
+  const lower = query.toLowerCase()
+  const byModel = devices.filter((device) => device.model && device.model.toLowerCase() === lower)
+  if (byModel.length === 1) {
+    return byModel[0]
+  }
+  const matches = devices.filter(
+    (device) =>
+      device.serial.toLowerCase().includes(lower) || (device.model && device.model.toLowerCase().includes(lower)),
+  )
+  if (matches.length === 1) {
+    return matches[0]
+  }
+  if (matches.length > 1) {
+    throw new PackError(`设备不唯一：${query}`, EXIT.DEVICE, {
+      hint: `候选：${matches.map(formatDevice).join('；')}`,
+    })
+  }
+  return null
+}
+
+/**
+ * @param {Device} device
+ * @returns {string}
+ */
+function formatDevice(device) {
+  return `${device.serial}${device.model ? `（${device.model}）` : ''}`
+}
+
+/**
+ * @param {Device[]} devices
+ * @param {string} [input] 完整序列号、型号或唯一子串
+ */
+export function pickDevice(devices, input) {
+  if (input) {
+    const match = matchDevice(devices, input)
     if (!match) {
-      throw new PackError(`找不到设备：${serial}`, EXIT.DEVICE)
+      throw new PackError(`找不到设备：${input}`, EXIT.DEVICE, {
+        hint: `可用设备：${devices.map(formatDevice).join('；') || '(无)'}；支持序列号后缀或型号`,
+      })
     }
     return match
   }
