@@ -89,6 +89,14 @@ uni-pack debug -p <项目>     # 真机调试
 | `JAVA_HOME` | JDK 17+ 根目录 |
 | `UNI_PACK_TEMP` | 前端构建临时目录，默认 `<workDir>/<项目>/tmp` |
 
+### 应用图标与启动图
+
+正式包需要准备 Android 图标和启动图。不配置也能构建，但会回退到离线 SDK 的默认资源（DCloud 图标和启动图）并给出告警，发布前请务必替换：
+
+- 在 manifest 的 `app-plus.distribute.icons.android` / `app-plus.distribute.splashscreen.android` 中填写 hdpi / xhdpi / xxhdpi / xxxhdpi 路径；
+- 或放到默认目录：`src/static/app/icons/`（`72x72.png`、`96x96.png`、`144x144.png`、`192x192.png`）与 `src/static/app/splash/`（`splash-hdpi.png` 等）；
+- 只配置部分密度时，会使用已有最高密度自动补齐其它密度和 `res/drawable/` 兜底图。
+
 ## 安装
 
 ```bash
@@ -331,6 +339,7 @@ uni-pack debug -p PRO_PHONE
 | 多设备安装到了错误的设备 | 传 `--device <序列号/型号/唯一子串>` |
 | 无线配对超时 | 同网段、关闭 VPN/代理、放行防火墙、升级 platform-tools |
 | 前端构建 `esbuild-*: Access is denied` | 系统/用户 TEMP 被杀毒或索引服务占用，设置 `UNI_PACK_TEMP` 指向非用户目录 |
+| 应用图标/启动图没配 | 使用 SDK 默认 DCloud 资源并告警，发布前在 manifest 或默认目录补齐 |
 | Gradle 大量 `D8 ... Kotlin metadata` | DCloud AAR 由更高版本 Kotlin 编译，模板 R8 提示；不影响产物，默认已折叠 |
 | 当前基座不包含原生插件 | 自定义基座较旧，在 HBuilderX 重新制作包含该插件的基座 |
 | 日志看不到 JS 输出 | HBuilderX 模式看项目 `console` 日志；自建基座加 `--logs` |
