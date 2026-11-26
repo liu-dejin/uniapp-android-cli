@@ -142,7 +142,7 @@ uni-pack device
 
 通用参数：
 
-- `-p, --project <dir>`：项目目录；不传时使用当前目录
+- `-p, --project <dir>`：项目目录，或已登记项目名（支持目录名/唯一子串，如 `-p PRO_PHONE`、`-p phone`）；不传时使用当前目录
 - `--verbose`：输出全量 Gradle 原始日志（默认把重复的 D8 / Kotlin metadata 告警折叠成摘要）
 - `--json`：`doctor` / `build` / `wgt` 输出机器可读结果
 
@@ -158,6 +158,7 @@ uni-pack init [-p <dir>] [--appkey <key>] [--package <包名>] [--key-alias <别
 - 自动识别 CLI / HBuilderX 项目
 - 自动探测 HBuilderX 与离线 SDK，并按项目版本匹配 SDK
 - 交互式补全项目级配置（包名、AppKey、证书、别名、`keystore.properties`、输出目录）；回车保留默认值
+- 询问是否把 HBuilderX 热重载（策略/基座类型）写入项目 `debug` 预设，之后 `uni-pack debug -p <项目名>` 无需再带参数
 - 机器级路径（离线 SDK / HBuilderX / Android SDK / JDK）：已探测到时询问是否修改，缺失时强制引导填写，结果写入 `~/.uniapp-android-cli/config.json`，后续项目复用
 - 非 TTY / CI 环境自动跳过问答，`--yes` 可显式跳过
 - 可共享字段写入 `<项目>/uni-pack.config.json`：包名、AppKey、签名路径、`webBuild`、输出目录，可提交到仓库
@@ -222,6 +223,19 @@ uni-pack wgt [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
 - 打包前已有资源版本闸门，不再需要脚本自己核对版本；
 - 下游若依赖 md5 或固定前缀，先按清单字段/文件名适配；确认没有 CI 或脚本引用后，再删除 `scripts/build-wgt.mjs` 与 `package.json` 的 `build:wgt`。
 
+### projects
+
+```bash
+uni-pack projects
+```
+
+列出 `~/.uniapp-android-cli/config.json` 里已登记的项目（名称、目录、类型），方便直接用项目名执行后续命令：
+
+```bash
+uni-pack build -p PRO_PHONE
+uni-pack debug -p PRO_PHONE
+```
+
 ### debug
 
 ```bash
@@ -239,6 +253,7 @@ uni-pack debug [-p <dir>] [--base <apk>] [--build] [--push]
 - `--logs`：实时输出 `console`、`uni-app`、`AndroidRuntime` 日志，`Ctrl+C` 结束
 - 都不传且已有基座：只打印基座路径
 - `--hbuilderx`：改用 HBuilderX CLI 真机运行（差量热重载 + 项目 `console` 日志），见下方「HBuilderX 真机运行」
+- 项目级 `debug` 预设可省略全部调试参数：`uni-pack debug -p <项目名>` 直接按预设执行
 
 ### HBuilderX 真机运行（热重载 + 项目日志）
 
@@ -252,6 +267,28 @@ uni-pack debug [-p <dir>] [--base <apk>] [--build] [--push]
 ```bash
 uni-pack debug -p <项目> --hbuilderx --device <serial> --logs
 ```
+
+项目级预设（`uni-pack.config.json`，`init` 问答也会写入）：
+
+```json
+{
+  "debug": {
+    "strategy": "hbuilderx",
+    "playground": "custom",
+    "customType": "local",
+    "device": "V1963A",
+    "logs": true
+  }
+}
+```
+
+配置后日常只需：
+
+```bash
+uni-pack debug -p <项目名>
+```
+
+命令行参数仍然优先（如 `--playground standard`、`--device 33538`）；`--push/--build/--base/--install` 会强制回到 uni-pack 自己的基座流程。`--device` 支持完整序列号、型号或唯一子串，只连一台设备时可省略。
 
 - 保存代码后 HBuilderX 自动差量编译并同步到已安装基座，终端**直接输出项目 `console` 日志**（不是原生日志），`Ctrl+C` 结束；
 - `--playground standard`（默认）使用 HBuilderX 标准基座；
@@ -333,6 +370,13 @@ uni-pack version
     "keystoreProperties": "certificate/android/keystore.properties",
     "storePasswordEnv": "UNI_PACK_STORE_PASS",
     "keyPasswordEnv": "UNI_PACK_KEY_PASS"
+  },
+  "debug": {
+    "strategy": "hbuilderx",
+    "playground": "custom",
+    "customType": "local",
+    "device": "V1963A",
+    "logs": true
   }
 }
 ```
@@ -402,6 +446,10 @@ AppKey 会被打进 APK，不属于密码；如果公司规范不允许入库，
 | `projects.<key>.outputPrefix` | APK 文件名前缀，默认取 manifest 的 `name`；固定它可让展示名改动不影响产物前缀 |
 | `projects.<key>.webBuild` | CLI 项目的前端构建命令与产物目录 |
 | `projects.<key>.signing` | 签名配置 |
+| `projects.<key>.debug.strategy` | 调试默认策略：`hbuilderx`（热重载）或 `legacy`（uni-pack 自建基座） |
+| `projects.<key>.debug.playground` / `customType` | HBuilderX 基座预设：`standard`/`custom`、`local`/`device` |
+| `projects.<key>.debug.device` | 默认设备：序列号、型号或唯一子串 |
+| `projects.<key>.debug.logs` | 是否默认输出日志 |
 | `projects.<key>.debug.launchActivity` | 启动 Activity，默认 `io.dcloud.PandoraEntry` |
 
 ### 签名配置

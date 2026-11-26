@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { resolveDefaultWebBuild, resolveProject } from '../../src/core/config.js'
+import { PackError } from '../../src/core/errors.js'
 
 test('输出目录默认落在项目内，忽略全局旧配置', async () => {
   const projectDir = path.resolve('virtual/demo')
@@ -60,6 +61,26 @@ test('HBuilderX 项目默认使用 app-plus 产物目录', async () => {
   const result = await resolveDefaultWebBuild('hbuilderx', path.resolve('virtual/demo'))
   assert.equal(result.mode, 'hbuilderx')
   assert.equal(result.outputDir, 'unpackage/dist/build/app-plus')
+})
+
+test('-p 支持项目目录名与唯一子串，歧义时报错', async () => {
+  const config = {
+    projects: {
+      'pro-phone': { projectDir: path.resolve('virtual/PRO_PHONE'), type: 'hbuilderx' },
+      'pro-pad': { projectDir: path.resolve('virtual/PRO_PAD'), type: 'hbuilderx' },
+      'uni-demo': { projectDir: path.resolve('virtual/DEMO'), type: 'cli' },
+    },
+  }
+
+  assert.equal((await resolveProject(config, 'PRO_PHONE')).project.name, 'pro-phone')
+  assert.equal((await resolveProject(config, 'phone')).project.name, 'pro-phone')
+  assert.equal((await resolveProject(config, 'pro_phone')).project.name, 'pro-phone')
+  assert.equal((await resolveProject(config, 'uni-demo')).project.name, 'uni-demo')
+
+  await assert.rejects(
+    resolveProject(config, 'pro'),
+    (error) => error instanceof PackError && error.code === 2 && /不唯一/.test(error.message),
+  )
 })
 
 test('项目级 uni-pack.config.json 覆盖用户配置，相对输出目录按项目解析', async () => {

@@ -25,6 +25,7 @@ const SPECS = {
     jdk: { type: 'string' },
   },
   doctor: { ...COMMON },
+  projects: { ...COMMON },
   devices: { ...COMMON },
   device: {
     ...COMMON,
@@ -118,6 +119,9 @@ export async function main(argv) {
     } else if (command === 'doctor') {
       const { doctorCommand } = await import('./commands/doctor.js')
       await doctorCommand(options)
+    } else if (command === 'projects') {
+      const { projectsCommand } = await import('./commands/projects.js')
+      await projectsCommand(options)
     } else if (command === 'devices') {
       const { devicesCommand } = await import('./commands/devices.js')
       await devicesCommand(options)
@@ -203,6 +207,7 @@ function printHelp() {
                    [--android-sdk <dir>] [--jdk <dir>] [--yes]
                    （问答式写入 <项目>/uni-pack.config.json；缺环境会引导填写；CI 用 --yes 跳过）
   uni-pack doctor  [-p <dir>] [--json]                环境自检
+  uni-pack projects                                   列出已登记项目（-p 可用项目名/目录名）
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
                    [--skip-web] [--skip-resource-check] [--out <dir>] [--offline]
                    [--prune <n>] [--no-daemon]

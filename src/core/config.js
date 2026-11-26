@@ -85,6 +85,33 @@ export async function resolveProject(config, nameOrPath, cwd = process.cwd()) {
     return finalizeProject(config, byPath[0], byPath[1])
   }
 
+  // 支持用项目名/目录名/唯一子串代替长路径，例如 -p PRO_PHONE 或 -p phone
+  const wanted = normalizeProjectName(target)
+  if (wanted && !target.includes('/') && !target.includes('\\')) {
+    const entries = Object.entries(projects)
+    const exact = entries.filter(
+      ([key, entry]) =>
+        normalizeProjectName(key) === wanted || normalizeProjectName(path.basename(String(entry.projectDir ?? ''))) === wanted,
+    )
+    if (exact.length === 1) {
+      return finalizeProject(config, exact[0][0], exact[0][1])
+    }
+    if (exact.length > 1) {
+      throw projectAmbiguous(target, exact)
+    }
+    const partial = entries.filter(
+      ([key, entry]) =>
+        normalizeProjectName(key).includes(wanted) ||
+        normalizeProjectName(path.basename(String(entry.projectDir ?? ''))).includes(wanted),
+    )
+    if (partial.length === 1) {
+      return finalizeProject(config, partial[0][0], partial[0][1])
+    }
+    if (partial.length > 1) {
+      throw projectAmbiguous(target, partial)
+    }
+  }
+
   if (!nameOrPath) {
     if (!(await isUniappProject(absolute))) {
       throw new PackError('当前目录不是 uni-app 项目，请用 --project 指定项目目录或先在配置里登记', EXIT.CONFIG)
@@ -93,9 +120,33 @@ export async function resolveProject(config, nameOrPath, cwd = process.cwd()) {
   }
 
   if (!(await isUniappProject(absolute))) {
-    throw new PackError(`找不到项目：${nameOrPath}（既不是已登记的项目名，也不是 uni-app 项目目录）`, EXIT.CONFIG)
+    throw new PackError(`找不到项目：${nameOrPath}（既不是已登记的项目名，也不是 uni-app 项目目录）`, EXIT.CONFIG, {
+      hint: '用 uni-pack projects 查看已登记项目，或 --project 传完整路径',
+    })
   }
   return finalizeProject(config, path.basename(absolute), { projectDir: absolute })
+}
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeProjectName(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * @param {string} target
+ * @param {Array<[string, any]>} entries
+ * @returns {PackError}
+ */
+function projectAmbiguous(target, entries) {
+  return new PackError(`项目名不唯一：${target}`, EXIT.CONFIG, {
+    hint: `候选：${entries.map(([key, entry]) => `${key}（${entry.projectDir}）`).join('；')}`,
+  })
 }
 
 /**
