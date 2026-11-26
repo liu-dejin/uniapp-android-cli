@@ -90,6 +90,8 @@ uni-pack version
 
 ## 快速开始
 
+首次 `init` 会像 `create-vue` 一样逐项询问包名、AppKey、签名证书、别名、`keystore.properties`、输出目录，直接回车保留括号里的默认值；CI 或非交互环境加 `--yes` 跳过问答。可共享的配置会写到 `<项目>/uni-pack.config.json`。
+
 ### CLI 项目
 
 ```bash
@@ -107,10 +109,10 @@ uni-pack doctor -p ../YFB_PROJECT/PRO_PHONE
 uni-pack build  -p ../YFB_PROJECT/PRO_PHONE --mode release
 ```
 
-HBuilderX 项目如果没有 `certificate/android/keystore.properties`，`init` 不知道签名别名和密码，需要显式传：
+HBuilderX 项目如果没有 `certificate/android/keystore.properties`，`init` 会询问证书路径与别名；密码仍然只在构建时提供：
 
 ```bash
-uni-pack init  -p <项目> --appkey <key> --key-alias <别名>
+uni-pack init  -p <项目> --appkey <key>
 uni-pack build -p <项目> --mode release --store-password <密码> --key-password <密码>
 ```
 
@@ -150,14 +152,16 @@ uni-pack device
 uni-pack init [-p <dir>] [--appkey <key>] [--package <包名>] [--key-alias <别名>]
               [--keystore <文件>] [--keystore-properties <文件>]
               [--sdk <dir>] [--hbuilderx <dir>]
-              [--android-sdk <dir>] [--jdk <dir>]
+              [--android-sdk <dir>] [--jdk <dir>] [--yes]
 ```
 
 - 自动识别 CLI / HBuilderX 项目
 - 自动探测 HBuilderX 与离线 SDK，并按项目版本匹配 SDK
-- 写入 `~/.uniapp-android-cli/config.json`
-- 不覆盖已有连接配置；`--package` 用于 HBuilderX 项目 manifest 里没有包名的情况
-- 证书默认在 `<项目>/certificate/android/` 下自动探测 `*.keystore` / `*.jks`；团队自定义布局用 `--keystore` / `--keystore-properties` 指定，相对路径按项目目录解析
+- 交互式补全项目级配置（包名、AppKey、证书、别名、`keystore.properties`、输出目录）；回车保留默认值
+- 非 TTY / CI 环境自动跳过问答，`--yes` 可显式跳过
+- 可共享字段写入 `<项目>/uni-pack.config.json`：包名、AppKey、签名路径、`webBuild`、输出目录，可提交到仓库
+- 本机路径写入 `~/.uniapp-android-cli/config.json`：`projectDir`、`sdkRoot`、`hbuilderxRoot`
+- 密码不写入任何配置；证书默认在 `<项目>/certificate/android/` 下自动探测，团队自定义布局用 `--keystore` / `--keystore-properties` 指定（相对路径按项目目录解析）
 - `--key-alias` 可省略：会从 `keystore.properties` 的 `keyAlias` 读取
 - 版本不一致时会直接打印两边版本和修复方向
 
@@ -274,10 +278,42 @@ uni-pack version
 
 | 文件 | 说明 |
 | --- | --- |
-| `~/.uniapp-android-cli/config.json` | 用户级配置，保存 SDK、Android SDK、JDK、项目列表 |
-| `<项目>/uni-pack.config.json` | 项目级覆盖，可写 appKey、package、signing、webBuild、outputDir、sdkRoot 等 |
+| `~/.uniapp-android-cli/config.json` | 本机配置：SDK / Android SDK / JDK / HBuilderX 路径，以及项目注册（`projectDir`、`sdkRoot`） |
+| `<项目>/uni-pack.config.json` | 项目配置（`init` 生成，可提交）：包名、AppKey、签名路径、`webBuild`、输出目录；不含密码 |
+
+同名配置以**项目级优先**；密码只来自命令行、环境变量或 `keystore.properties`。
 
 配置文件是**标准 JSON**，不支持注释。
+
+### 项目级配置示例
+
+`init` 生成的 `<项目>/uni-pack.config.json`：
+
+```json
+{
+  "type": "cli",
+  "package": "uni.app.UNIF1A8702",
+  "appKey": "<DCloud AppKey>",
+  "outputDir": "apk",
+  "outputPrefix": "PRO-DIS-V2",
+  "webBuild": {
+    "command": "pnpm",
+    "args": ["run", "build:app-android"],
+    "outputDir": "dist/build/app"
+  },
+  "signing": {
+    "keystore": "certificate/android/PRO_DIS_V2.keystore",
+    "keyAlias": "prodis",
+    "keystoreProperties": "certificate/android/keystore.properties",
+    "storePasswordEnv": "UNI_PACK_STORE_PASS",
+    "keyPasswordEnv": "UNI_PACK_KEY_PASS"
+  }
+}
+```
+
+`keystore` / `keystoreProperties` 的相对路径按项目目录解析；团队自定义布局可直接改成 `build/signing/...` 或绝对路径。
+
+AppKey 会被打进 APK，不属于密码；如果公司规范不允许入库，可以只放在用户级配置（两处都写时项目级优先）。
 
 ### 用户级配置示例
 
@@ -306,31 +342,17 @@ uni-pack version
       "projectDir": "C:/develop/Project/YFB_PROJECT/PRO_DIS_V2",
       "type": "cli",
       "sdkRoot": "C:/develop/android-sdk/uniapp-Android/Android-SDK@5.34.82692_20261030",
-      "hbuilderxRoot": "",
-      "package": "com.yfb.prodis",
-      "appKey": "<DCloud AppKey>",
-      "outputDir": "C:/develop/Project/YFB_PROJECT/PRO_DIS_V2/apk",
-      "webBuild": {
-        "command": "pnpm",
-        "args": ["run", "build:app-android"],
-        "outputDir": "dist/build/app"
-      },
-      "signing": {
-        "keystore": "certificate/android/PRO_DIS_V2.keystore",
-        "keyAlias": "prodis",
-        "keystoreProperties": "certificate/android/keystore.properties",
-        "storePasswordEnv": "UNI_PACK_STORE_PASS",
-        "keyPasswordEnv": "UNI_PACK_KEY_PASS"
-      },
-      "debug": {
-        "launchActivity": "io.dcloud.PandoraEntry"
-      }
+      "hbuilderxRoot": ""
     }
   }
 }
 ```
 
+> 旧版本 `init` 写在用户配置里的 `appKey` / `package` / `signing` 仍然兼容；重跑一次 `init` 会自动迁移到项目级 `uni-pack.config.json`。
+
 ### 字段说明
+
+用户配置里的 `projects.<key>.*` 与项目级 `uni-pack.config.json` 使用同一套字段名（项目级去掉 `projects.<key>` 前缀，直接写 `package` / `signing` 等）。
 
 | 字段 | 说明 |
 | --- | --- |

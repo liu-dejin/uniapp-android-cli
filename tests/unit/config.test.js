@@ -61,3 +61,48 @@ test('HBuilderX 项目默认使用 app-plus 产物目录', async () => {
   assert.equal(result.mode, 'hbuilderx')
   assert.equal(result.outputDir, 'unpackage/dist/build/app-plus')
 })
+
+test('项目级 uni-pack.config.json 覆盖用户配置，相对输出目录按项目解析', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'uni-pack-local-'))
+  try {
+    await writeFile(
+      path.join(dir, 'uni-pack.config.json'),
+      JSON.stringify({
+        type: 'cli',
+        package: 'uni.app.LOCAL',
+        appKey: 'local-key',
+        outputDir: 'build/apk',
+        webBuild: { command: 'pnpm', args: ['run', 'build:app-android'], outputDir: 'dist/build/app' },
+        signing: {
+          keystore: 'cert/app.jks',
+          keyAlias: 'local',
+          keystoreProperties: 'cert/creds.properties',
+        },
+      }),
+    )
+    const { project } = await resolveProject(
+      {
+        projects: {
+          demo: {
+            projectDir: dir,
+            type: 'cli',
+            package: 'old.pkg',
+            appKey: 'old-key',
+            outputDir: path.join(dir, 'apk'),
+          },
+        },
+      },
+      'demo',
+    )
+
+    assert.equal(project.package, 'uni.app.LOCAL')
+    assert.equal(project.appKey, 'local-key')
+    assert.equal(project.outputDir, path.join(dir, 'build', 'apk'))
+    assert.equal(project.signing.keystore, 'cert/app.jks')
+    assert.equal(project.signing.keyAlias, 'local')
+    assert.equal(project.webBuild.command, 'pnpm')
+    assert.equal(project.type, 'cli')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

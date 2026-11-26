@@ -1,31 +1,34 @@
 import path from 'node:path'
-import { CONFIG_FILE, loadConfig, resolveDefaultWebBuild, saveConfig } from '../core/config.js'
+import { CONFIG_FILE, PROJECT_CONFIG_FILE, loadConfig, resolveDefaultWebBuild, saveConfig } from '../core/config.js'
 import { PackError, EXIT } from '../core/errors.js'
-import { exists, readText } from '../core/fsx.js'
+import { exists, readJson, readText, writeJson } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
+import { Prompt, canPrompt } from '../core/interactive.js'
+import {
+  makeFileValidator,
+  splitInitConfig,
+  toProjectRelative,
+  validateAppKey,
+  validateConfirm,
+  validatePackageName,
+  validateRequired,
+} from '../core/initConfig.js'
 import { Logger } from '../core/logger.js'
 import { detectVueVersion, normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
 import { findSdkForVersion, resolveSdkRootInput } from '../core/sdk.js'
 import { readCompilerVersion, readSdkVersion, versionMismatchHint } from '../core/version.js'
 
-// 这些字段以 manifest 为准；旧配置里的快照会在重跑 init 时清掉。
-const SNAPSHOT_FIELDS = [
-  'name',
-  'appid',
-  'versionName',
-  'versionCode',
-  'minSdkVersion',
-  'targetSdkVersion',
-  'abiFilters',
-]
-
 /**
+ * 初始化：探测环境与项目信息，交互式补全项目级配置，
+ * 把可共享字段写入 <项目>/uni-pack.config.json，把本机路径写入用户配置。
  * @param {Record<string, any>} options
  */
 export async function initCommand(options) {
   const logger = new Logger(options)
   const projectDir = path.resolve(options.project ?? options.cwd ?? process.cwd())
   const config = await loadConfig()
+  const projectConfigFile = path.join(projectDir, PROJECT_CONFIG_FILE)
+  const existingProject = (await exists(projectConfigFile)) ? await readJson(projectConfigFile).catch(() => ({})) : {}
 
   const { manifest, type } = await readProjectManifest(projectDir)
   const vueVersion = await detectVueVersion(projectDir, manifest, type)
@@ -33,35 +36,137 @@ export async function initCommand(options) {
   const resolved = normalizeManifest(manifest, { package: fallbackPackage }, { validate: false })
   const key = projectKey(resolved)
   const existing = config.projects?.[key] ?? {}
+  const existingSigning = { ...(existing.signing ?? {}), ...(existingProject.signing ?? {}) }
 
-  const hbuilderx = type === 'hbuilderx' ? await resolveHbuilderx(config, { projectDir, explicit: options.hbuilderx }) : null
-  const compiler = await readCompilerVersion({ ...existing, type, projectDir }, { hbuilderxRoot: hbuilderx?.root })
+  const hbuilderx =
+    type === 'hbuilderx'
+      ? await resolveHbuilderx(config, { projectDir, explicit: options.hbuilderx ?? existingProject.hbuilderxRoot })
+      : null
+  const compiler = await readCompilerVersion(
+    { ...existing, ...existingProject, type, projectDir },
+    { hbuilderxRoot: hbuilderx?.root },
+  )
 
   const sdkRoot = await resolveSdkRoot({
     config,
     explicit: options.sdk,
-    existingRoot: existing.sdkRoot,
+    existingRoot: existingProject.sdkRoot ?? existing.sdkRoot,
     version: compiler.version,
   })
   const sdkVersion = await readSdkVersion(sdkRoot)
   const androidSdk = await resolveAndroidSdk(options.androidSdk ?? config.android.sdkDir)
   const javaHome = await resolveJdk(options.jdk ?? config.android.jdk)
+
   const certificateDir = path.join(projectDir, 'certificate/android')
+  const conventionalProperties = path.join(certificateDir, 'keystore.properties')
+  const detectedKeystore = (await detectKeystore(certificateDir)) || ''
   const explicitProperties = String(options.keystoreProperties ?? '').trim()
-  const properties = explicitProperties
-    ? path.resolve(projectDir, explicitProperties)
-    : path.join(certificateDir, 'keystore.properties')
   const explicitKeystore = String(options.keystore ?? '').trim()
-  const keystore = explicitKeystore
-    ? path.resolve(projectDir, explicitKeystore)
-    : (await detectKeystore(certificateDir)) || String(existing.signing?.keystore ?? '')
-  if (explicitKeystore && !(await exists(keystore))) {
-    throw new PackError(`找不到 --keystore 指定的证书：${keystore}`, EXIT.CONFIG)
+
+  let packageName = String(resolved.packageName || existingProject.package || existing.package || '')
+  let appKey = String(options.appkey ?? existingProject.appKey ?? existing.appKey ?? '')
+  let keystorePath = explicitKeystore
+    ? absoluteFrom(projectDir, explicitKeystore)
+    : absoluteFrom(projectDir, existingSigning.keystore) || detectedKeystore
+  let propertiesPath = explicitProperties
+    ? path.resolve(projectDir, explicitProperties)
+    : absoluteFrom(projectDir, existingSigning.keystoreProperties) ||
+      ((await exists(conventionalProperties)) ? conventionalProperties : '')
+  let keyAlias =
+    String(options.keyAlias ?? '') ||
+    String(existingSigning.keyAlias ?? '') ||
+    ((await exists(propertiesPath)) ? await readProperty(propertiesPath, 'keyAlias') : '')
+  let outputDir =
+    toProjectRelative(projectDir, String(existingProject.outputDir ?? existing.outputDir ?? 'apk')) || 'apk'
+
+  if (explicitKeystore && !(await exists(keystorePath))) {
+    throw new PackError(`找不到 --keystore 指定的证书：${keystorePath}`, EXIT.CONFIG)
   }
-  if (explicitProperties && !(await exists(properties))) {
-    throw new PackError(`找不到 --keystore-properties 指定的文件：${properties}`, EXIT.CONFIG)
+  if (explicitProperties && !(await exists(propertiesPath))) {
+    throw new PackError(`找不到 --keystore-properties 指定的文件：${propertiesPath}`, EXIT.CONFIG)
   }
-  const alias = (await exists(properties)) ? await readProperty(properties, 'keyAlias') : ''
+
+  if (canPrompt(options)) {
+    logger.step('初始化配置')
+    logger.info('直接回车保留括号内的默认值；密码不会在这里收集，构建时再提供')
+    const prompt = new Prompt()
+    const fileValidator = makeFileValidator(projectDir)
+    try {
+      packageName = await prompt.ask({
+        question: 'Android 包名',
+        defaultValue: packageName,
+        validate: validatePackageName,
+      })
+      appKey = await prompt.ask({
+        question: 'DCloud AppKey（32 位十六进制，留空跳过）',
+        defaultValue: appKey,
+        validate: validateAppKey,
+      })
+      keystorePath = await prompt.ask({
+        question: '签名证书路径（留空跳过）',
+        defaultValue: keystorePath,
+        validate: fileValidator,
+      })
+      keyAlias = await prompt.ask({ question: '签名别名 keyAlias', defaultValue: keyAlias })
+      propertiesPath = await prompt.ask({
+        question: 'keystore.properties 路径（留空则用环境变量提供密码）',
+        defaultValue: propertiesPath,
+        validate: fileValidator,
+      })
+      outputDir = await prompt.ask({
+        question: 'APK 输出目录',
+        defaultValue: outputDir,
+        validate: validateRequired,
+      })
+      const confirmed = await prompt.ask({ question: '确认写入以上配置？[Y/n]', validate: validateConfirm })
+      if (/^n/.test(confirmed)) {
+        logger.info('已取消，未写入任何配置')
+        return { key, config, cancelled: true }
+      }
+    } finally {
+      prompt.close()
+    }
+  }
+
+  if (!keyAlias && propertiesPath && (await exists(propertiesPath))) {
+    keyAlias = await readProperty(propertiesPath, 'keyAlias')
+  }
+
+  const defaultWebBuild = await resolveDefaultWebBuild(type, projectDir)
+  const baseWebBuild = existingProject.webBuild ?? existing.webBuild
+  const webBuild =
+    type === 'hbuilderx'
+      ? baseWebBuild?.mode === 'hbuilderx'
+        ? baseWebBuild
+        : defaultWebBuild
+      : (baseWebBuild ?? defaultWebBuild)
+
+  const { projectConfig, userEntry } = splitInitConfig({
+    projectDir,
+    type: /** @type {'cli' | 'hbuilderx'} */ (type),
+    packageName,
+    appKey,
+    outputDir,
+    outputPrefix: String(existingProject.outputPrefix ?? existing.outputPrefix ?? ''),
+    webBuild,
+    signing: {
+      keystore: keystorePath,
+      keyAlias,
+      keystoreProperties: propertiesPath,
+      storePasswordEnv: existingSigning.storePasswordEnv,
+      keyPasswordEnv: existingSigning.keyPasswordEnv,
+    },
+    existingProjectConfig: existingProject,
+    existingUserEntry: existing,
+    sdkRoot,
+    hbuilderxRoot: hbuilderx?.root ?? existing.hbuilderxRoot ?? '',
+  })
+  userEntry.debug = {
+    ...(existing.debug ?? {}),
+    launchActivity: existing.debug?.launchActivity ?? 'io.dcloud.PandoraEntry',
+  }
+
+  await writeJson(projectConfigFile, projectConfig)
   config.sdk = { ...config.sdk, root: config.sdk.root || sdkRoot }
   config.hbuilderx = { ...config.hbuilderx, root: config.hbuilderx.root || hbuilderx?.root || '' }
   config.android = {
@@ -69,55 +174,21 @@ export async function initCommand(options) {
     sdkDir: androidSdk || config.android.sdkDir || '',
     jdk: javaHome || config.android.jdk || '',
   }
-  const next = { ...existing }
-  for (const field of SNAPSHOT_FIELDS) {
-    delete next[field]
-  }
-  const defaultWebBuild = await resolveDefaultWebBuild(type, projectDir)
-  const webBuild =
-    type === 'hbuilderx'
-      ? existing.webBuild?.mode === 'hbuilderx'
-        ? existing.webBuild
-        : defaultWebBuild
-      : (existing.webBuild ?? defaultWebBuild)
-
   config.projects = {
     ...(config.projects ?? {}),
-    [key]: {
-      ...next,
-      projectDir,
-      type,
-      sdkRoot,
-      hbuilderxRoot: hbuilderx?.root ?? existing.hbuilderxRoot ?? '',
-      package: fallbackPackage || resolved.packageName || existing.package || '',
-      appKey: options.appkey ?? existing.appKey ?? '',
-      outputDir: existing.outputDir ?? path.join(projectDir, 'apk'),
-      webBuild,
-      signing: {
-        ...(existing.signing ?? {}),
-        keystore,
-        keyAlias: options.keyAlias || alias || existing.signing?.keyAlias || 'key0',
-        keystoreProperties: (await exists(properties))
-          ? properties
-          : (existing.signing?.keystoreProperties ?? ''),
-        storePasswordEnv: existing.signing?.storePasswordEnv ?? 'UNI_PACK_STORE_PASS',
-        keyPasswordEnv: existing.signing?.keyPasswordEnv ?? 'UNI_PACK_KEY_PASS',
-      },
-      debug: {
-        ...(existing.debug ?? {}),
-        launchActivity: existing.debug?.launchActivity ?? 'io.dcloud.PandoraEntry',
-      },
-    },
+    [key]: userEntry,
   }
-
   await saveConfig(config)
 
   logger.step('已写入配置')
-  logger.info(CONFIG_FILE)
+  logger.info(`项目配置：${projectConfigFile}`)
+  logger.info(`用户配置：${CONFIG_FILE}`)
   logger.info(
-    `项目：${key}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'}，Vue ${vueVersion}）  ${resolved.appid}  ${resolved.packageName || '(未配置包名)'}`,
+    `项目：${key}（${type === 'hbuilderx' ? 'HBuilderX' : 'CLI'}，Vue ${vueVersion}）  ${resolved.appid}`,
   )
   logger.info(`版本：${resolved.versionName}(${resolved.versionCode})，以 manifest.json 为准`)
+  logger.info(`包名：${projectConfig.package || '(未配置)'}`)
+  logger.info(`AppKey：${projectConfig.appKey ? '已配置' : '(未配置)'}`)
   logger.info(`编译器：${compiler.version ?? '未知'}（${compiler.source}）`)
   logger.info(`离线 SDK：${sdkRoot}（${sdkVersion ?? '版本未知'}）`)
   if (compiler.version && sdkVersion && compiler.version !== sdkVersion) {
@@ -131,13 +202,28 @@ export async function initCommand(options) {
   }
   logger.info(`Android SDK：${androidSdk || '(未找到)'}`)
   logger.info(`JDK：${javaHome || '(未找到，构建时用 JAVA_HOME)'}`)
-  logger.info(`输出：${config.projects[key].outputDir}`)
-  logger.info(`证书：${keystore || '(未找到，请手工填写 signing.keystore)'}`)
-  if (!config.projects[key].package) {
+  logger.info(`输出：${path.resolve(projectDir, String(projectConfig.outputDir))}`)
+  logger.info(`证书：${projectConfig.signing.keystore || '(未配置，构建会失败)'}`)
+  if (projectConfig.signing.keystoreProperties) {
+    logger.info(`密码文件：${projectConfig.signing.keystoreProperties}`)
+  }
+  if (!projectConfig.package) {
     logger.warn('未配置包名：请在 manifest.json 的 app-plus.distribute.android.packagename 填写，或重跑 init 时加 --package')
   }
-  if (!config.projects[key].appKey) {
-    logger.warn('未填写 DCloud AppKey，请在配置的 appKey 字段补齐（后台按 appid + 包名 + 证书 SHA1 绑定）')
+  if (!projectConfig.appKey) {
+    logger.warn('未填写 DCloud AppKey，请在项目配置 appKey 字段补齐（后台按 appid + 包名 + 证书 SHA1 绑定）')
+  }
+  if (projectConfig.signing.keystore && !projectConfig.signing.keyAlias) {
+    logger.warn('未配置签名别名 keyAlias：构建会失败，可在 keystore.properties 里补 keyAlias')
+  }
+  if (
+    projectConfig.signing.keystore &&
+    !projectConfig.signing.keystoreProperties &&
+    !hasSigningEnv(projectConfig.signing)
+  ) {
+    logger.warn(
+      `未配置密码来源：提供 keystore.properties，或设置环境变量 ${projectConfig.signing.storePasswordEnv} / ${projectConfig.signing.keyPasswordEnv}，或构建时传 --store-password/--key-password`,
+    )
   }
   if (type === 'hbuilderx' && !hbuilderx) {
     logger.warn('未找到 HBuilderX：构建时无法编译源码，请用 --hbuilderx <目录> 指定或设置 HBUILDERX_HOME')
@@ -150,7 +236,7 @@ export async function initCommand(options) {
   }
   logger.info(`下一步：uni-pack doctor -p "${projectDir}"`)
 
-  return { key, config }
+  return { key, config, projectConfig }
 }
 
 /**
@@ -158,9 +244,33 @@ export async function initCommand(options) {
  * @param {{ name: string, packageName: string, appid: string }} resolved
  */
 function projectKey(resolved) {
-  return [resolved.name, resolved.packageName, resolved.appid]
-    .map((value) => String(value ?? '').toLowerCase().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, ''))
-    .find(Boolean) ?? 'app'
+  return (
+    [resolved.name, resolved.packageName, resolved.appid]
+      .map((value) => String(value ?? '').toLowerCase().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, ''))
+      .find(Boolean) ?? 'app'
+  )
+}
+
+/**
+ * @param {string} projectDir
+ * @param {string} value
+ * @returns {string}
+ */
+function absoluteFrom(projectDir, value) {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    return ''
+  }
+  return path.isAbsolute(text) ? text : path.resolve(projectDir, text)
+}
+
+/**
+ * @param {{ storePasswordEnv?: string, keyPasswordEnv?: string }} signing
+ * @returns {boolean}
+ */
+function hasSigningEnv(signing) {
+  const names = [signing.storePasswordEnv, signing.keyPasswordEnv].filter(Boolean)
+  return names.some((name) => Boolean(process.env[String(name)]))
 }
 
 /**
