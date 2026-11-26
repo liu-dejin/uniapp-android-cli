@@ -65,6 +65,10 @@ const SPECS = {
     device: { type: 'string' },
     base: { type: 'string' },
     build: { type: 'boolean' },
+    hbuilderx: { type: 'boolean' },
+    playground: { type: 'string' },
+    'custom-type': { type: 'string' },
+    ui: { type: 'boolean' },
     'skip-web': { type: 'boolean' },
     'skip-resource-check': { type: 'boolean' },
     'no-daemon': { type: 'boolean' },
@@ -204,6 +208,7 @@ function printHelp() {
                    [--prune <n>] [--no-daemon]
   uni-pack wgt     [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
   uni-pack debug   [-p <dir>] [--push] [--install] [--build] [--logs] [--device <serial>]
+                   [--hbuilderx [--playground standard|custom] [--custom-type local|device] [--ui]]
   uni-pack devices                                    列出设备（同 device list）
   uni-pack device [list]                              列出 USB / 无线设备
   uni-pack device pair [--timeout 120] [--service <名>] [--code <6位>]

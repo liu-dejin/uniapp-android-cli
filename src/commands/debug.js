@@ -3,11 +3,15 @@ import { spawn } from 'node:child_process'
 import { buildProject } from '../core/build.js'
 import { installApk, listDevices, pickDevice, startApp } from '../core/adb.js'
 import { loadConfig, resolveProject } from '../core/config.js'
-import { exists } from '../core/fsx.js'
+import { PackError, EXIT } from '../core/errors.js'
+import { ensureDir, exists } from '../core/fsx.js'
+import { resolveHbuilderx } from '../core/hbuilderx.js'
+import { buildLaunchArgs, cliPath, ensureHbuilderxRunning, runLaunch } from '../core/hbuilderxCli.js'
 import { Logger } from '../core/logger.js'
 import { apkBaseName } from '../core/output.js'
 import { normalizeManifest, readProjectManifest } from '../core/project.js'
 import { resolveAndroidTools } from '../core/sdk.js'
+import { resolveBuildTempDir, resolveWorkRoot } from '../core/workdir.js'
 
 /**
  * @param {Record<string, any>} options
@@ -16,6 +20,12 @@ export async function debugCommand(options) {
   const logger = new Logger(options)
   const config = await loadConfig()
   const { project } = await resolveProject(config, options.project, options.cwd)
+
+  if (options.hbuilderx) {
+    await runHbuilderxDebug({ config, project, options, logger })
+    return
+  }
+
   const tools = await resolveAndroidTools(config)
 
   const devices = await listDevices(tools.adb)
@@ -69,6 +79,74 @@ export async function debugCommand(options) {
 
   if (options.logs) {
     await streamLogs(tools.adb, device.serial)
+  }
+}
+
+/**
+ * 用 HBuilderX CLI 真机运行：HBuilderX 负责编译、安装基座、差量同步与项目日志，
+ * uni-pack 只做环境检查和参数转发。
+ * @param {{ config: any, project: any, options: Record<string, any>, logger: Logger }} input
+ */
+async function runHbuilderxDebug(input) {
+  const { config, project, options, logger } = input
+  const playground = String(options.playground ?? 'standard').toLowerCase()
+  if (playground !== 'standard' && playground !== 'custom') {
+    throw new PackError(`--playground 只支持 standard 或 custom，收到：${options.playground}`, EXIT.CONFIG)
+  }
+  const customType = String(options.customType ?? 'local').toLowerCase()
+  if (playground === 'custom' && customType !== 'local' && customType !== 'device') {
+    throw new PackError(`--custom-type 只支持 local 或 device，收到：${options.customType}`, EXIT.CONFIG)
+  }
+
+  const hbuilderx = await resolveHbuilderx(config, { project })
+  if (!hbuilderx) {
+    throw new PackError('找不到 HBuilderX，无法使用 --hbuilderx 运行', EXIT.PREFLIGHT, {
+      hint: '运行 uni-pack init 配置 hbuilderx.root，或设置 HBUILDERX_HOME',
+    })
+  }
+  const cli = cliPath(hbuilderx.root)
+  if (!(await exists(cli))) {
+    throw new PackError(`找不到 HBuilderX CLI：${cli}`, EXIT.PREFLIGHT, {
+      hint: '确认 hbuilderx.root 指向 HBuilderX 安装目录（与 cli.exe 同级）',
+    })
+  }
+
+  const workRoot = resolveWorkRoot(config, project)
+  const temp = resolveBuildTempDir(workRoot)
+  await ensureDir(temp.tempDir)
+  const env = { TEMP: temp.tempDir, TMP: temp.tempDir }
+
+  logger.step(`HBuilderX 真机运行：${project.projectDir}`)
+  const version = await ensureHbuilderxRunning({ cli, logger, env })
+  logger.info(`HBuilderX ${version.raw}${options.logs ? '（项目日志会直接输出）' : ''}`)
+
+  let packageName = ''
+  if (playground === 'custom' && customType === 'device') {
+    const { manifest } = await readProjectManifest(project.projectDir)
+    packageName = normalizeManifest(manifest, { package: project.package }, { validate: false }).packageName
+    if (!packageName) {
+      throw new PackError('--custom-type device 需要知道设备上基座的包名', EXIT.CONFIG, {
+        hint: '在 manifest 的 app-plus.distribute.android.packagename 配好包名，或改用 --custom-type local',
+      })
+    }
+  }
+
+  if (options.push || options.base || options.install || options.build) {
+    logger.info('--hbuilderx 模式下由 HBuilderX 负责构建/安装/启动，--push/--base/--install 会忽略')
+  }
+
+  const args = buildLaunchArgs({
+    projectDir: project.projectDir,
+    deviceId: options.device,
+    playground: /** @type {'standard' | 'custom'} */ (playground),
+    customType: /** @type {'local' | 'device'} */ (customType),
+    packageName,
+    ui: Boolean(options.ui),
+  })
+  logger.info(`保存代码后自动差量编译并同步；Ctrl+C 结束${options.ui ? '（界面模式）' : ''}`)
+  const code = await runLaunch({ cli, args, env })
+  if (code !== 0) {
+    throw new PackError(`HBuilderX 运行结束（退出码 ${code}）`, EXIT.DEVICE)
   }
 }
 

@@ -227,6 +227,7 @@ uni-pack wgt [-p <dir>] [--skip-web] [--skip-resource-check] [--out <dir>]
 ```bash
 uni-pack debug [-p <dir>] [--base <apk>] [--build] [--push]
                [--install] [--logs] [--device <serial>] [--skip-web]
+               [--hbuilderx [--playground standard|custom] [--custom-type local|device] [--ui]]
                [--store-password <密码>] [--key-password <密码>]
 ```
 
@@ -237,6 +238,26 @@ uni-pack debug [-p <dir>] [--base <apk>] [--build] [--push]
 - `--install`：安装基座并拉起应用
 - `--logs`：实时输出 `console`、`uni-app`、`AndroidRuntime` 日志，`Ctrl+C` 结束
 - 都不传且已有基座：只打印基座路径
+- `--hbuilderx`：改用 HBuilderX CLI 真机运行（差量热重载 + 项目 `console` 日志），见下方「HBuilderX 真机运行」
+
+### HBuilderX 真机运行（热重载 + 项目日志）
+
+前提：
+
+- HBuilderX **5.0+**，项目已经在 HBuilderX 中导入；
+- HBuilderX 主程序保持运行；未运行时 `uni-pack` 会执行 `cli open`（Windows 5.34 没有无头模式，会打开窗口，5.36+ 可用 `startup.ini` 开无头）；
+- **不要以管理员身份运行 HBuilderX**，否则普通权限的 `cli.exe` 连不上主程序（命名管道 `EPERM`）；
+- 系统 TEMP 不可写时，先用可写 TEMP 启动 HBuilderX（`uni-pack` 会把 `TEMP/TMP` 传给 cli 子进程）。
+
+```bash
+uni-pack debug -p <项目> --hbuilderx --device <serial> --logs
+```
+
+- 保存代码后 HBuilderX 自动差量编译并同步到已安装基座，终端**直接输出项目 `console` 日志**（不是原生日志），`Ctrl+C` 结束；
+- `--playground standard`（默认）使用 HBuilderX 标准基座；
+- `--playground custom --custom-type local` 使用本地自定义基座，`--custom-type device` 使用设备上已安装的基座（包名取自 manifest）；
+- `--ui`：交给 HBuilderX 界面运行（需 5.11+）；
+- `--push` / `--base` / `--install` 在 `--hbuilderx` 模式下会被忽略（由 HBuilderX 负责安装与启动）。
 
 ### devices / device
 
