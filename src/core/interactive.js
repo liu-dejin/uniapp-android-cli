@@ -2,8 +2,12 @@ import { createInterface } from 'node:readline/promises'
 import process from 'node:process'
 
 /**
- * @typedef {{ ok: boolean, value?: string, message?: string }} PromptValidation
- * @typedef {{ question: string, defaultValue?: string, validate?: (value: string) => PromptValidation }} PromptOptions
+ * @typedef {Object} PromptValidationResult
+ * @property {boolean} ok
+ * @property {string} [value]
+ * @property {string} [message]
+ * @typedef {(value: string) => PromptValidationResult | Promise<PromptValidationResult>} PromptValidator
+ * @typedef {{ question: string, defaultValue?: string, validate?: PromptValidator }} PromptOptions
  */
 
 /**
@@ -73,7 +77,7 @@ export class Prompt {
       if (!options.validate) {
         return value
       }
-      const result = options.validate(value)
+      const result = await options.validate(value)
       if (result.ok) {
         return result.value ?? value
       }

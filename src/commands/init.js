@@ -13,6 +13,7 @@ import {
   validatePackageName,
   validateRequired,
 } from '../core/initConfig.js'
+import { askEnvironmentPaths } from '../core/initEnv.js'
 import { Logger } from '../core/logger.js'
 import { detectVueVersion, normalizeManifest, readProjectManifest, readProjectPackage } from '../core/project.js'
 import { findSdkForVersion, resolveSdkRootInput } from '../core/sdk.js'
@@ -38,24 +39,39 @@ export async function initCommand(options) {
   const existing = config.projects?.[key] ?? {}
   const existingSigning = { ...(existing.signing ?? {}), ...(existingProject.signing ?? {}) }
 
-  const hbuilderx =
+  let hbuilderx =
     type === 'hbuilderx'
       ? await resolveHbuilderx(config, { projectDir, explicit: options.hbuilderx ?? existingProject.hbuilderxRoot })
       : null
-  const compiler = await readCompilerVersion(
+  let compiler = await readCompilerVersion(
     { ...existing, ...existingProject, type, projectDir },
     { hbuilderxRoot: hbuilderx?.root },
   )
 
-  const sdkRoot = await resolveSdkRoot({
-    config,
-    explicit: options.sdk,
-    existingRoot: existingProject.sdkRoot ?? existing.sdkRoot,
-    version: compiler.version,
-  })
-  const sdkVersion = await readSdkVersion(sdkRoot)
-  const androidSdk = await resolveAndroidSdk(options.androidSdk ?? config.android.sdkDir)
-  const javaHome = await resolveJdk(options.jdk ?? config.android.jdk)
+  let sdkRoot = ''
+  let sdkVersion = null
+  try {
+    sdkRoot = await resolveSdkRoot({
+      config,
+      explicit: options.sdk,
+      existingRoot: existingProject.sdkRoot ?? existing.sdkRoot,
+      version: compiler.version,
+    })
+    sdkVersion = await readSdkVersion(sdkRoot)
+  } catch (error) {
+    if (!canPrompt(options)) {
+      throw error
+    }
+    logger.warn(error instanceof Error ? error.message : String(error))
+    logger.info('稍后可以填写离线 SDK 路径')
+  }
+  let androidSdk = await resolveAndroidSdk(options.androidSdk ?? config.android.sdkDir)
+  let javaHome = await resolveJdk(options.jdk ?? config.android.jdk)
+
+  let hbuilderxPath = String(hbuilderx?.root ?? options.hbuilderx ?? existingProject.hbuilderxRoot ?? '')
+  let sdkPath = String(sdkRoot || options.sdk || '')
+  let androidSdkPath = String(androidSdk || options.androidSdk || '')
+  let jdkPath = String(javaHome || options.jdk || '')
 
   const certificateDir = path.join(projectDir, 'certificate/android')
   const conventionalProperties = path.join(certificateDir, 'keystore.properties')
@@ -118,6 +134,18 @@ export async function initCommand(options) {
         defaultValue: outputDir,
         validate: validateRequired,
       })
+
+      const envAnswers = await askEnvironmentPaths({
+        prompt,
+        type: /** @type {'cli' | 'hbuilderx'} */ (type),
+        logger,
+        defaults: { sdkPath, hbuilderxPath, androidSdkPath, jdkPath },
+      })
+      sdkPath = envAnswers.sdkPath
+      hbuilderxPath = envAnswers.hbuilderxPath
+      androidSdkPath = envAnswers.androidSdkPath
+      jdkPath = envAnswers.jdkPath
+
       const confirmed = await prompt.ask({ question: '确认写入以上配置？[Y/n]', validate: validateConfirm })
       if (/^n/.test(confirmed)) {
         logger.info('已取消，未写入任何配置')
@@ -126,6 +154,39 @@ export async function initCommand(options) {
     } finally {
       prompt.close()
     }
+  }
+
+  // 交互里改过机器级路径后，用最终值重新解析编译器与离线 SDK
+  if (hbuilderxPath && hbuilderxPath !== hbuilderx?.root) {
+    hbuilderx = await resolveHbuilderx(config, { projectDir, explicit: hbuilderxPath })
+  }
+  compiler = await readCompilerVersion(
+    { ...existing, ...existingProject, type, projectDir },
+    { hbuilderxRoot: hbuilderx?.root },
+  )
+  if (sdkPath && sdkPath !== sdkRoot) {
+    const resolved = await resolveSdkRootInput(sdkPath)
+    if (!resolved) {
+      throw new PackError(`离线 SDK 路径无效：${sdkPath}`, EXIT.PREFLIGHT, {
+        hint: '应指向包含 HBuilder-Integrate-AS 的 Android-SDK@x.yy 目录',
+      })
+    }
+    sdkRoot = resolved
+  }
+  if (!sdkRoot) {
+    sdkRoot = await resolveSdkRoot({
+      config,
+      explicit: sdkPath || options.sdk,
+      existingRoot: existingProject.sdkRoot ?? existing.sdkRoot,
+      version: compiler.version,
+    })
+  }
+  sdkVersion = sdkRoot ? await readSdkVersion(sdkRoot) : null
+  if (androidSdkPath) {
+    androidSdk = androidSdkPath
+  }
+  if (jdkPath) {
+    javaHome = jdkPath
   }
 
   if (!keyAlias && propertiesPath && (await exists(propertiesPath))) {
@@ -159,7 +220,7 @@ export async function initCommand(options) {
     existingProjectConfig: existingProject,
     existingUserEntry: existing,
     sdkRoot,
-    hbuilderxRoot: hbuilderx?.root ?? existing.hbuilderxRoot ?? '',
+    hbuilderxRoot: hbuilderx?.root ?? existingProject.hbuilderxRoot ?? existing.hbuilderxRoot ?? '',
   })
   userEntry.debug = {
     ...(existing.debug ?? {}),
@@ -167,8 +228,8 @@ export async function initCommand(options) {
   }
 
   await writeJson(projectConfigFile, projectConfig)
-  config.sdk = { ...config.sdk, root: config.sdk.root || sdkRoot }
-  config.hbuilderx = { ...config.hbuilderx, root: config.hbuilderx.root || hbuilderx?.root || '' }
+  config.sdk = { ...config.sdk, root: sdkRoot || config.sdk.root || '' }
+  config.hbuilderx = { ...config.hbuilderx, root: hbuilderx?.root || config.hbuilderx.root || '' }
   config.android = {
     ...config.android,
     sdkDir: androidSdk || config.android.sdkDir || '',

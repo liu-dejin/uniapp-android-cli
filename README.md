@@ -90,7 +90,7 @@ uni-pack version
 
 ## 快速开始
 
-首次 `init` 会像 `create-vue` 一样逐项询问包名、AppKey、签名证书、别名、`keystore.properties`、输出目录，直接回车保留括号里的默认值；CI 或非交互环境加 `--yes` 跳过问答。可共享的配置会写到 `<项目>/uni-pack.config.json`。
+首次 `init` 会像 `create-vue` 一样逐项询问包名、AppKey、签名证书、别名、`keystore.properties`、输出目录，直接回车保留括号里的默认值；缺少离线 SDK / HBuilderX / Android SDK / JDK 时会继续引导填写本机路径并写入全局配置。CI 或非交互环境加 `--yes` 跳过问答。可共享的配置会写到 `<项目>/uni-pack.config.json`。
 
 ### CLI 项目
 
@@ -158,6 +158,7 @@ uni-pack init [-p <dir>] [--appkey <key>] [--package <包名>] [--key-alias <别
 - 自动识别 CLI / HBuilderX 项目
 - 自动探测 HBuilderX 与离线 SDK，并按项目版本匹配 SDK
 - 交互式补全项目级配置（包名、AppKey、证书、别名、`keystore.properties`、输出目录）；回车保留默认值
+- 机器级路径（离线 SDK / HBuilderX / Android SDK / JDK）：已探测到时询问是否修改，缺失时强制引导填写，结果写入 `~/.uniapp-android-cli/config.json`，后续项目复用
 - 非 TTY / CI 环境自动跳过问答，`--yes` 可显式跳过
 - 可共享字段写入 `<项目>/uni-pack.config.json`：包名、AppKey、签名路径、`webBuild`、输出目录，可提交到仓库
 - 本机路径写入 `~/.uniapp-android-cli/config.json`：`projectDir`、`sdkRoot`、`hbuilderxRoot`
@@ -282,6 +283,8 @@ uni-pack version
 | `<项目>/uni-pack.config.json` | 项目配置（`init` 生成，可提交）：包名、AppKey、签名路径、`webBuild`、输出目录；不含密码 |
 
 同名配置以**项目级优先**；密码只来自命令行、环境变量或 `keystore.properties`。
+
+`init` 的问答会把机器级路径写进用户配置（全局复用），把团队共享字段写进项目配置。
 
 配置文件是**标准 JSON**，不支持注释。
 

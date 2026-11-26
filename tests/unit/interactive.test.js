@@ -50,6 +50,20 @@ test('校验失败时提示并重新询问', async () => {
   }
 })
 
+test('支持异步校验（如 SDK 目录探测）', async () => {
+  const { input, prompt } = makePrompt()
+  try {
+    const pending = prompt.ask({
+      question: 'SDK',
+      validate: async (value) => (value === 'ok' ? { ok: true, value: '/resolved/sdk' } : { ok: false, message: 'bad' }),
+    })
+    input.write('ok\n')
+    assert.equal(await pending, '/resolved/sdk')
+  } finally {
+    prompt.close()
+  }
+})
+
 test('输入流提前关闭时回退默认值', async () => {
   const { input, prompt } = makePrompt()
   try {

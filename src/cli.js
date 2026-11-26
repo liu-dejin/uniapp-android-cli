@@ -197,7 +197,7 @@ function printHelp() {
   uni-pack init    [-p <dir>] [--appkey <key>] [--package <包名>] [--sdk <dir>] [--hbuilderx <dir>]
                    [--keystore <文件>] [--key-alias <别名>] [--keystore-properties <文件>]
                    [--android-sdk <dir>] [--jdk <dir>] [--yes]
-                   （问答式写入 <项目>/uni-pack.config.json；CI 用 --yes 跳过问答）
+                   （问答式写入 <项目>/uni-pack.config.json；缺环境会引导填写；CI 用 --yes 跳过）
   uni-pack doctor  [-p <dir>] [--json]                环境自检
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]
                    [--skip-web] [--skip-resource-check] [--out <dir>] [--offline]
