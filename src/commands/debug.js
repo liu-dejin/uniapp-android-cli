@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { buildProject } from '../core/build.js'
 import { installApk, listDevices, pickDevice, startApp } from '../core/adb.js'
 import { loadConfig, resolveProject } from '../core/config.js'
+import { resolveDebugBase, resolveDebugDevice, resolveDebugLogs, resolveDebugStrategy } from '../core/debugPreset.js'
 import { PackError, EXIT } from '../core/errors.js'
 import { ensureDir, exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
@@ -20,9 +21,13 @@ export async function debugCommand(options) {
   const logger = new Logger(options)
   const config = await loadConfig()
   const { project } = await resolveProject(config, options.project, options.cwd)
+  const preset = project.debug ?? {}
 
-  if (options.hbuilderx) {
-    await runHbuilderxDebug({ config, project, options, logger })
+  options.device = resolveDebugDevice(options, preset) || undefined
+  options.logs = resolveDebugLogs(options, preset)
+
+  if (resolveDebugStrategy(options, preset) === 'hbuilderx') {
+    await runHbuilderxDebug({ config, project, options, logger, preset })
     return
   }
 
@@ -81,18 +86,22 @@ export async function debugCommand(options) {
 /**
  * 用 HBuilderX CLI 真机运行：HBuilderX 负责编译、安装基座、差量同步与项目日志，
  * uni-pack 只做环境检查和参数转发。
- * @param {{ config: any, project: any, options: Record<string, any>, logger: Logger }} input
+ * @param {{ config: any, project: any, options: Record<string, any>, logger: Logger, preset: any }} input
  */
 async function runHbuilderxDebug(input) {
-  const { config, project, options, logger } = input
-  const playground = String(options.playground ?? 'standard').toLowerCase()
-  if (playground !== 'standard' && playground !== 'custom') {
+  const { config, project, options, logger, preset } = input
+  if (options.playground && !['standard', 'custom'].includes(String(options.playground).toLowerCase())) {
     throw new PackError(`--playground 只支持 standard 或 custom，收到：${options.playground}`, EXIT.CONFIG)
   }
-  const customType = String(options.customType ?? 'local').toLowerCase()
-  if (playground === 'custom' && customType !== 'local' && customType !== 'device') {
+  if (options.customType && !['local', 'device'].includes(String(options.customType).toLowerCase())) {
     throw new PackError(`--custom-type 只支持 local 或 device，收到：${options.customType}`, EXIT.CONFIG)
   }
+  const { playground, customType } = resolveDebugBase(options, preset)
+
+  const tools = await resolveAndroidTools(config)
+  const devices = await listDevices(tools.adb)
+  const device = pickDevice(devices, options.device ?? preset.device)
+  options.device = device.serial
 
   // 本地自定义基座：先自己 adb install -r。
   // HBuilderX 只按包名+版本判断“基座已是最新”，同版本的正式包会让它误判并跳过安装。
@@ -103,12 +112,8 @@ async function runHbuilderxDebug(input) {
         hint: '先在 HBuilderX 制作自定义基座（生成 unpackage/debug/android_debug.apk），或改用 --custom-type device',
       })
     }
-    const tools = await resolveAndroidTools(config)
-    const devices = await listDevices(tools.adb)
-    const device = pickDevice(devices, options.device)
     logger.info(`安装本地自定义基座：${baseApk}`)
     await installApk(tools.adb, baseApk, device.serial)
-    options.device = device.serial
   }
 
   const hbuilderx = await resolveHbuilderx(config, { project })

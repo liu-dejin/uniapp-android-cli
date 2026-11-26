@@ -10,8 +10,10 @@ import {
   toProjectRelative,
   validateAppKey,
   validateConfirm,
+  validateCustomType,
   validateExplicitConfirm,
   validatePackageName,
+  validatePlayground,
   validateRequired,
 } from '../core/initConfig.js'
 import { askEnvironmentPaths } from '../core/initEnv.js'
@@ -95,6 +97,11 @@ export async function initCommand(options) {
     ((await exists(propertiesPath)) ? await readProperty(propertiesPath, 'keyAlias') : '')
   let outputDir =
     toProjectRelative(projectDir, String(existingProject.outputDir ?? existing.outputDir ?? 'apk')) || 'apk'
+  const existingDebug = { ...(existingProject.debug ?? existing.debug ?? {}) }
+  const debugConfig = {
+    ...existingDebug,
+    launchActivity: existingDebug.launchActivity ?? 'io.dcloud.PandoraEntry',
+  }
 
   if (explicitKeystore && !(await exists(keystorePath))) {
     throw new PackError(`找不到 --keystore 指定的证书：${keystorePath}`, EXIT.CONFIG)
@@ -146,6 +153,29 @@ export async function initCommand(options) {
       hbuilderxPath = envAnswers.hbuilderxPath
       androidSdkPath = envAnswers.androidSdkPath
       jdkPath = envAnswers.jdkPath
+
+      const useHbuilderx = await prompt.ask({
+        question: '使用 HBuilderX 热重载调试？[y/N]',
+        defaultValue: debugConfig.strategy === 'hbuilderx' ? 'y' : type === 'hbuilderx' ? 'y' : 'n',
+        validate: validateConfirm,
+      })
+      if (/^y/.test(useHbuilderx)) {
+        debugConfig.strategy = 'hbuilderx'
+        debugConfig.playground = await prompt.ask({
+          question: '基座类型（standard/custom）',
+          defaultValue: debugConfig.playground ?? 'custom',
+          validate: validatePlayground,
+        })
+        if (debugConfig.playground === 'custom') {
+          debugConfig.customType = await prompt.ask({
+            question: '自定义基座类型（local/device）',
+            defaultValue: debugConfig.customType ?? 'local',
+            validate: validateCustomType,
+          })
+        }
+      } else {
+        debugConfig.strategy = 'legacy'
+      }
 
       const confirmed = await prompt.ask({
         question: '确认写入以上配置？(y/n)',
@@ -223,13 +253,10 @@ export async function initCommand(options) {
     },
     existingProjectConfig: existingProject,
     existingUserEntry: existing,
+    debug: debugConfig,
     sdkRoot,
     hbuilderxRoot: hbuilderx?.root ?? existingProject.hbuilderxRoot ?? existing.hbuilderxRoot ?? '',
   })
-  userEntry.debug = {
-    ...(existing.debug ?? {}),
-    launchActivity: existing.debug?.launchActivity ?? 'io.dcloud.PandoraEntry',
-  }
 
   await writeJson(projectConfigFile, projectConfig)
   config.sdk = { ...config.sdk, root: sdkRoot || config.sdk.root || '' }

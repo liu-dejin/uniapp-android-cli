@@ -87,6 +87,30 @@ export function validateExplicitConfirm(value) {
 }
 
 /**
+ * @param {string} value
+ * @returns {Validation}
+ */
+export function validateCustomType(value) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'local' || text === 'device') {
+    return { ok: true, value: text }
+  }
+  return { ok: false, message: '输入 local 或 device' }
+}
+
+/**
+ * @param {string} value
+ * @returns {Validation}
+ */
+export function validatePlayground(value) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'standard' || text === 'custom') {
+    return { ok: true, value: text }
+  }
+  return { ok: false, message: '输入 standard 或 custom' }
+}
+
+/**
  * 项目内路径尽量写成相对路径，方便提交到仓库；项目外保留绝对路径。
  * @param {string} projectDir
  * @param {string} value
@@ -105,7 +129,7 @@ export function toProjectRelative(projectDir, value) {
   return absolute
 }
 
-const PROJECT_ONLY_USER_FIELDS = ['appKey', 'package', 'signing', 'webBuild', 'outputDir', 'outputPrefix']
+const PROJECT_ONLY_USER_FIELDS = ['appKey', 'package', 'signing', 'webBuild', 'outputDir', 'outputPrefix', 'debug']
 
 // 版本/包名等以 manifest 为准，不写进任何配置，避免旧快照覆盖项目改动
 const SNAPSHOT_FIELDS = ['name', 'appid', 'versionName', 'versionCode', 'minSdkVersion', 'targetSdkVersion', 'abiFilters']
@@ -127,6 +151,7 @@ const SNAPSHOT_FIELDS = ['name', 'appid', 'versionName', 'versionCode', 'minSdkV
  *   storePasswordEnv?: string, keyPasswordEnv?: string }} input.signing
  * @param {any} [input.existingProjectConfig]
  * @param {any} [input.existingUserEntry]
+ * @param {Record<string, any>} [input.debug]
  * @param {string} input.sdkRoot
  * @param {string} [input.hbuilderxRoot]
  * @returns {{ projectConfig: Record<string, any>, userEntry: Record<string, any> }}
@@ -156,6 +181,13 @@ export function splitInitConfig(input) {
   }
   if (input.webBuild) {
     projectConfig.webBuild = input.webBuild
+  }
+  const debug = {
+    ...(existingProject.debug ?? existingUser.debug ?? {}),
+    ...(input.debug ?? {}),
+  }
+  if (Object.keys(debug).length > 0) {
+    projectConfig.debug = debug
   }
   projectConfig.signing = {
     ...(existingProject.signing ?? existingUser.signing ?? {}),

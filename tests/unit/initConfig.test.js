@@ -9,8 +9,10 @@ import {
   toProjectRelative,
   validateAppKey,
   validateConfirm,
+  validateCustomType,
   validateExplicitConfirm,
   validatePackageName,
+  validatePlayground,
   validateRequired,
 } from '../../src/core/initConfig.js'
 
@@ -75,6 +77,15 @@ test('项目内路径写相对路径，项目外保留绝对路径', async () =>
   }
 })
 
+test('调试基座选项只接受约定值', () => {
+  assert.equal(validatePlayground('standard').ok, true)
+  assert.equal(validatePlayground('CUSTOM').value, 'custom')
+  assert.equal(validatePlayground('device').ok, false)
+  assert.equal(validateCustomType('local').ok, true)
+  assert.equal(validateCustomType('DEVICE').value, 'device')
+  assert.equal(validateCustomType('standard').ok, false)
+})
+
 test('init 结果拆分：共享字段进项目配置，本机路径进用户配置', () => {
   const projectDir = path.join('C:', 'projects', 'demo')
   const { projectConfig, userEntry } = splitInitConfig({
@@ -131,6 +142,29 @@ test('init 结果拆分：共享字段进项目配置，本机路径进用户配
   assert.equal(userEntry.outputDir, undefined)
   assert.equal(userEntry.name, undefined)
   assert.equal(userEntry.versionName, undefined)
+})
+
+test('调试预设写入项目配置，并从用户配置移除', () => {
+  const { projectConfig, userEntry } = splitInitConfig({
+    projectDir: 'C:/p',
+    type: 'hbuilderx',
+    packageName: 'uni.app.DEMO',
+    appKey: '',
+    outputDir: 'apk',
+    signing: { keystore: '', keyAlias: '', keystoreProperties: '' },
+    debug: { strategy: 'hbuilderx', playground: 'custom', customType: 'local', logs: true },
+    existingProjectConfig: {},
+    existingUserEntry: { debug: { launchActivity: 'io.dcloud.PandoraEntry' }, sdkRoot: 'C:/sdk' },
+    sdkRoot: 'C:/sdk',
+  })
+  assert.deepEqual(projectConfig.debug, {
+    launchActivity: 'io.dcloud.PandoraEntry',
+    strategy: 'hbuilderx',
+    playground: 'custom',
+    customType: 'local',
+    logs: true,
+  })
+  assert.equal(userEntry.debug, undefined)
 })
 
 test('清空 AppKey/包名时会从项目配置里删除旧值', () => {
