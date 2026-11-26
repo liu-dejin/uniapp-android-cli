@@ -148,7 +148,8 @@ uni-pack device
 
 ```bash
 uni-pack init [-p <dir>] [--appkey <key>] [--package <包名>] [--key-alias <别名>]
-              [--keystore <文件>] [--sdk <dir>] [--hbuilderx <dir>]
+              [--keystore <文件>] [--keystore-properties <文件>]
+              [--sdk <dir>] [--hbuilderx <dir>]
               [--android-sdk <dir>] [--jdk <dir>]
 ```
 
@@ -156,6 +157,8 @@ uni-pack init [-p <dir>] [--appkey <key>] [--package <包名>] [--key-alias <别
 - 自动探测 HBuilderX 与离线 SDK，并按项目版本匹配 SDK
 - 写入 `~/.uniapp-android-cli/config.json`
 - 不覆盖已有连接配置；`--package` 用于 HBuilderX 项目 manifest 里没有包名的情况
+- 证书默认在 `<项目>/certificate/android/` 下自动探测 `*.keystore` / `*.jks`；团队自定义布局用 `--keystore` / `--keystore-properties` 指定，相对路径按项目目录解析
+- `--key-alias` 可省略：会从 `keystore.properties` 的 `keyAlias` 读取
 - 版本不一致时会直接打印两边版本和修复方向
 
 ### doctor
@@ -375,6 +378,24 @@ keyPassword=123456
 keyAlias=key0
 ```
 
+- 路径规则：`keystore` / `keystoreProperties` 的相对路径都按**项目目录**解析，可以放在项目任意位置；也可以写绝对路径（团队共享证书目录）
+- 别名：`keyAlias` 优先取配置；不填时自动读 `keystoreProperties` 里的 `keyAlias`
+- 环境变量名：`storePasswordEnv` / `keyPasswordEnv` 可以改成团队已有的变量名（不局限于 `UNI_PACK_*`）
+- 默认布局只探测 `<项目>/certificate/android/`；自定义布局用 `init --keystore ... --keystore-properties ...`，或直接写项目级 `uni-pack.config.json`
+
+团队自定义布局示例：
+
+```text
+<项目>/
+├─ build/signing/release.jks
+└─ build/signing/release.properties
+```
+
+```bash
+uni-pack init -p <项目> --keystore build/signing/release.jks \
+  --keystore-properties build/signing/release.properties
+```
+
 密码优先级：命令行 → 环境变量 → `keystore.properties` → `keyPassword` 缺省时复用 `storePassword`。
 
 密码不会落盘：工作目录的 `build.gradle` 只写 `System.getenv('UNI_PACK_STORE_PASS')` / `System.getenv('UNI_PACK_KEY_PASS')`，解析出的密码由构建子进程环境变量注入；复制到工作目录的 `aw-pack.jks` 在 Gradle 结束（成功或失败）后立即删除。
@@ -586,6 +607,7 @@ HBuilderX 实际打包使用小写包名，大小写不一致会导致 AppKey �
 | 构建结束 Gradle 守护进程仍占内存 | 默认复用守护进程以加速下一次构建 | 一次性环境加 `--no-daemon`；需要立即释放时在工作目录执行 `gradlew --stop` |
 | JDK 不匹配 | 版本过低 | 设置 `JAVA_HOME` 指向 JDK 17+ |
 | 找不到 apksigner | build-tools 缺失 | 安装 build-tools，或配置 `android.buildTools` |
+| 证书/密码文件不在 `certificate/android` | 默认只在该目录自动探测 | `init` 加 `--keystore` / `--keystore-properties`，或在项目级配置 `signing` 里指定；相对路径按项目目录解析 |
 
 ## 退出码
 

@@ -47,11 +47,20 @@ export async function initCommand(options) {
   const androidSdk = await resolveAndroidSdk(options.androidSdk ?? config.android.sdkDir)
   const javaHome = await resolveJdk(options.jdk ?? config.android.jdk)
   const certificateDir = path.join(projectDir, 'certificate/android')
-  const properties = path.join(certificateDir, 'keystore.properties')
-  const keystore =
-    options.keystore ||
-    (await detectKeystore(certificateDir)) ||
-    String(existing.signing?.keystore ?? '')
+  const explicitProperties = String(options.keystoreProperties ?? '').trim()
+  const properties = explicitProperties
+    ? path.resolve(projectDir, explicitProperties)
+    : path.join(certificateDir, 'keystore.properties')
+  const explicitKeystore = String(options.keystore ?? '').trim()
+  const keystore = explicitKeystore
+    ? path.resolve(projectDir, explicitKeystore)
+    : (await detectKeystore(certificateDir)) || String(existing.signing?.keystore ?? '')
+  if (explicitKeystore && !(await exists(keystore))) {
+    throw new PackError(`找不到 --keystore 指定的证书：${keystore}`, EXIT.CONFIG)
+  }
+  if (explicitProperties && !(await exists(properties))) {
+    throw new PackError(`找不到 --keystore-properties 指定的文件：${properties}`, EXIT.CONFIG)
+  }
   const alias = (await exists(properties)) ? await readProperty(properties, 'keyAlias') : ''
   config.sdk = { ...config.sdk, root: config.sdk.root || sdkRoot }
   config.hbuilderx = { ...config.hbuilderx, root: config.hbuilderx.root || hbuilderx?.root || '' }

@@ -15,6 +15,7 @@ const SPECS = {
     ...COMMON,
     appkey: { type: 'string' },
     keystore: { type: 'string' },
+    'keystore-properties': { type: 'string' },
     'key-alias': { type: 'string' },
     package: { type: 'string' },
     sdk: { type: 'string' },
@@ -193,6 +194,7 @@ function printHelp() {
 
 用法：
   uni-pack init    [-p <dir>] [--appkey <key>] [--package <包名>] [--sdk <dir>] [--hbuilderx <dir>]
+                   [--keystore <文件>] [--key-alias <别名>] [--keystore-properties <文件>]
                    [--android-sdk <dir>] [--jdk <dir>]
   uni-pack doctor  [-p <dir>] [--json]                环境自检
   uni-pack build   [-p <dir>] [--mode release|debug] [--install] [--device <serial>]

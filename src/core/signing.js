@@ -18,16 +18,20 @@ import { exists, readText } from './fsx.js'
  */
 export async function resolveSigning(project, options = {}) {
   const signing = project.signing ?? {}
-  const keystore = String(signing.keystore ?? '')
-  const keyAlias = String(signing.keyAlias ?? '')
+  const keystore = resolveProjectPath(project.projectDir, signing.keystore)
+  const properties = await readProperties(signing.keystoreProperties, project.projectDir)
+  // 别名优先取配置；允许只给 keystore.properties（团队自定义布局时更省配置）
+  const keyAlias = String(signing.keyAlias ?? '') || String(properties.keyAlias ?? '')
   if (!keystore || !(await exists(keystore))) {
-    throw new PackError(`找不到签名证书：${keystore || '(未配置)'}`, EXIT.SIGN)
+    throw new PackError(`找不到签名证书：${keystore || '(未配置)'}`, EXIT.SIGN, {
+      hint: '检查 signing.keystore；相对路径按项目目录解析，也可以写绝对路径',
+    })
   }
   if (!keyAlias) {
-    throw new PackError('未配置签名别名 keyAlias', EXIT.SIGN)
+    throw new PackError('未配置签名别名 keyAlias', EXIT.SIGN, {
+      hint: '在配置 signing.keyAlias 填写，或写进 keystoreProperties 的 keyAlias',
+    })
   }
-
-  const properties = await readProperties(signing.keystoreProperties, project.projectDir)
 
   const storePassword =
     options.storePassword ??
@@ -47,6 +51,20 @@ export async function resolveSigning(project, options = {}) {
   }
 
   return { keystore, keyAlias, storePassword, keyPassword }
+}
+
+/**
+ * 配置里的相对路径统一相对项目目录解析，避免从别的目录执行时找不到证书。
+ * @param {string | undefined} projectDir
+ * @param {unknown} value
+ * @returns {string}
+ */
+function resolveProjectPath(projectDir, value) {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    return ''
+  }
+  return path.isAbsolute(text) ? text : path.join(String(projectDir ?? ''), text)
 }
 
 /**
