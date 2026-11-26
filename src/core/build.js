@@ -220,7 +220,6 @@ export async function buildProject(input) {
       const [name, required] = entry.split('|')
       return { name, required }
     }),
-    hardwareAccelerated: resolved.hardwareAccelerated,
     debug,
   })
   await mergeProjectManifest({ targetFile: androidManifest, projectDir: project.projectDir, logger })
