@@ -145,9 +145,11 @@ export async function doctorCommand(options) {
   const blocking = failed.filter((check) => check.name !== 'ADB 设备')
   if (project) {
     if (blocking.length === 0) {
-      logger.info(`下一步：uni-pack build -p "${project.projectDir}" --mode release`)
+      logger.info(
+        `下一步：uni-pack build -p "${project.projectDir}"（正式包）；调试基座加 --mode debug，资源包用 uni-pack wgt`,
+      )
     } else {
-      logger.info('先按上面的告警处理，再执行 build')
+      logger.info('先按上面的告警处理，再执行 build / wgt')
     }
   }
   logger.output('doctor', { ok: failed.length === 0, checks })
