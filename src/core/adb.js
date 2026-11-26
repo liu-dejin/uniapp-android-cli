@@ -17,26 +17,39 @@ export async function mdnsSupported(adb) {
 }
 
 /**
- * 解析 `adb mdns services` 输出，兼容 IPv4 与 [IPv6]:port。
+ * 解析 `adb mdns services` 输出，兼容两种格式：
+ * - 新版 3 列：<实例名> <服务类型> <host>:<port>
+ * - 老版 2 列：<实例名含服务类型> <host>:<port>
+ * 同时兼容 IPv4 与 [IPv6]:port。
  * @param {string} stdout
  * @returns {MdnsService[]}
  */
 export function parseMdnsServices(stdout) {
   /** @type {MdnsService[]} */
   const services = []
-  for (const line of stdout.split(/\r?\n/)) {
-    const match = /^(\S+)\s+(\[[^\]]+\]|[^\s:]+):(\d+)\s*$/.exec(line.trim())
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || /^List of discovered/i.test(line)) {
+      continue
+    }
+    const fields = line.split(/\s+/)
+    if (fields.length < 2) {
+      continue
+    }
+    const addressToken = fields[fields.length - 1]
+    const match = /^(\[[^\]]+\]|[^\s:]+):(\d+)$/.exec(addressToken)
     if (!match) {
       continue
     }
-    const name = match[1]
-    const host = match[2].replace(/^\[|\]$/g, '')
-    const type = name.includes('_adb-tls-pairing._tcp')
+    const name = fields[0]
+    const typeText = fields.length > 2 ? fields.slice(1, -1).join(' ') : name
+    const host = match[1].replace(/^\[|\]$/g, '')
+    const type = typeText.includes('_adb-tls-pairing._tcp')
       ? 'pairing'
-      : name.includes('_adb-tls-connect._tcp')
+      : typeText.includes('_adb-tls-connect._tcp')
         ? 'connect'
         : 'other'
-    services.push({ name, type, host, port: Number(match[3]), address: `${host}:${match[3]}` })
+    services.push({ name, type, host, port: Number(match[2]), address: `${host}:${match[2]}` })
   }
   return services
 }

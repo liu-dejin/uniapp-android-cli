@@ -58,7 +58,25 @@ test('手动配对地址必须带端口', () => {
   assert.equal(hostOf('[fe80::1]:37123'), 'fe80::1')
 })
 
-test('解析 adb mdns services 输出', () => {
+test('解析 adb mdns services 输出（新版 3 列）', () => {
+  const stdout = `List of discovered mdns services
+unipack-ab12	_adb-tls-pairing._tcp	192.168.1.20:37123
+adb-3B165N007DQ00000-hq66xZ	_adb-tls-connect._tcp	192.168.1.20:45221
+`
+  const services = parseMdnsServices(stdout)
+  assert.deepEqual(services, [
+    { name: 'unipack-ab12', type: 'pairing', host: '192.168.1.20', port: 37123, address: '192.168.1.20:37123' },
+    {
+      name: 'adb-3B165N007DQ00000-hq66xZ',
+      type: 'connect',
+      host: '192.168.1.20',
+      port: 45221,
+      address: '192.168.1.20:45221',
+    },
+  ])
+})
+
+test('解析 adb mdns services 输出（兼容老版 2 列）', () => {
   const stdout = `List of discovered mdns services
 adb-ABC123._adb-tls-connect._tcp.	192.168.1.20:5555
 unipack-ab12._adb-tls-pairing._tcp.	192.168.1.20:37123
@@ -90,6 +108,9 @@ test('手机广播的实例名与二维码服务名不同也能选中', () => {
   assert.equal(selectPairingService([stale], seen, 'unipack-ab12'), stale)
   assert.equal(selectPairingService([stale, fresh, other], seen, 'unipack-ab12'), null)
   assert.equal(selectPairingService([stale, fresh, named], seen, 'unipack-ab12'), named)
+  // 新版 adb 的实例名与二维码里的 S 完全一致
+  const exact = { name: 'unipack-ab12', type: 'pairing', address: '10.0.0.5:41003' }
+  assert.equal(selectPairingService([stale, exact], seen, 'unipack-ab12'), exact)
   assert.equal(selectPairingService([], seen, 'unipack-ab12'), null)
 })
 

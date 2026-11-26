@@ -79,7 +79,8 @@ export function pairingPayload(service, code) {
 export function selectPairingService(services, seen, service) {
   const pairing = services.filter((item) => item.type === 'pairing')
   const fresh = pairing.filter((item) => !seen.has(item.address))
-  const named = fresh.find((item) => item.name.startsWith(`${service}.`))
+  // 新版 adb 的实例名就是二维码里的 S；老版本会带 ._adb-tls-pairing._tcp 后缀
+  const named = fresh.find((item) => item.name === service || item.name.startsWith(`${service}.`))
   if (named) {
     return named
   }

@@ -110,7 +110,13 @@ async function pairByQr(adb, options, logger) {
   const pairing = await waitForPairingService(adb, service, before, timeout)
   if (!pairing) {
     throw new PackError(`等待超时：没有发现配对服务 ${service}`, EXIT.DEVICE, {
-      hint: '确认手机与电脑在同一 Wi-Fi，且已选择“使用二维码配对设备”；关闭 VPN/代理后重试',
+      hint: [
+        '确认手机与电脑在同一 Wi-Fi，且已选择“使用二维码配对设备”；关闭 VPN/代理后重试。',
+        '仍不行改用配对码方式：手机 无线调试 → “使用配对码配对设备”，然后执行',
+        '  uni-pack device pair <手机显示的 IP:端口> <6 位配对码>',
+        '配对完成后在无线调试主页查看 IP:端口，执行 uni-pack device connect <IP:端口>',
+        '诊断：另开终端执行 uni-pack device mdns，应能看到 _adb-tls-pairing._tcp 服务',
+      ].join('\n'),
     })
   }
 
@@ -149,7 +155,7 @@ async function pairByCode(adb, addressValue, codeValue, logger) {
   const host = hostOf(address)
   const connectService = await waitForConnectService(adb, host, before, 10)
   if (!connectService) {
-    logger.info(`连接：uni-pack device connect ${host}:5555`)
+    logger.info('已配对。请在手机“无线调试”主页查看 IP:端口，执行：uni-pack device connect <IP:端口>')
     return
   }
   await connect(adb, connectService.address, logger)
