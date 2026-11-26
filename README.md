@@ -134,7 +134,7 @@ uni-pack device
 | `<...>.apk.json` | 该 APK 的构建记录 + sha256 + builtAt |
 | `builds.jsonl` | 全部构建记录，一行一条，便于脚本或看板消费 |
 
-`<名称>` 默认取 manifest 的 `name`。如果希望改名不影响产物前缀，在项目级配置里写 `outputPrefix` 固定它。
+`<名称>` 默认取 manifest 的 `name`；如果 `name` 是中文（清洗后为空），会回退到项目标识或 appid。希望改名不影响产物前缀时，在项目级配置里写 `outputPrefix` 固定它。
 
 `--prune <n>` 会在构建完成后按时间只保留最近 n 个时间戳 APK（按 mode 分别计算，`latest` 与 `builds.jsonl` 永远保留）。
 

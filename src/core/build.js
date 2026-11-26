@@ -34,7 +34,7 @@ import { assertVersionMatch, readCompilerVersion, readSdkVersion, versionMismatc
 import { runWebBuild } from './webBuild.js'
 import { assertResourceVersion } from './resourceVersion.js'
 import { resolveBuildTempDir, resolveWorkRoot } from './workdir.js'
-import { apkBaseName, findApk, publishApk } from './output.js'
+import { apkBaseName, findApk, publishApk, resolveApkPrefix } from './output.js'
 
 /**
  * @param {Object} input
@@ -220,6 +220,7 @@ export async function buildProject(input) {
       const [name, required] = entry.split('|')
       return { name, required }
     }),
+    hardwareAccelerated: resolved.hardwareAccelerated,
     debug,
   })
   await mergeProjectManifest({ targetFile: androidManifest, projectDir: project.projectDir, logger })
@@ -276,7 +277,7 @@ export async function buildProject(input) {
   const apk = await findApk(apkDir, mode)
   await verifySignature(tools.apksigner, apk, logger)
 
-  const baseName = apkBaseName(String(project.outputPrefix ?? resolved.name), resolved.versionName, resolved.versionCode)
+  const baseName = apkBaseName(resolveApkPrefix(project, resolved), resolved.versionName, resolved.versionCode)
   const published = await publishApk({
     apk,
     outputDir: path.resolve(String(options.out ?? project.outputDir)),

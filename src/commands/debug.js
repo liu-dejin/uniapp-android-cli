@@ -8,7 +8,7 @@ import { ensureDir, exists } from '../core/fsx.js'
 import { resolveHbuilderx } from '../core/hbuilderx.js'
 import { buildLaunchArgs, cliPath, ensureHbuilderxRunning, runLaunch } from '../core/hbuilderxCli.js'
 import { Logger } from '../core/logger.js'
-import { apkBaseName } from '../core/output.js'
+import { apkBaseName, resolveApkPrefix } from '../core/output.js'
 import { normalizeManifest, readProjectManifest } from '../core/project.js'
 import { resolveAndroidTools } from '../core/sdk.js'
 import { resolveBuildTempDir, resolveWorkRoot } from '../core/workdir.js'
@@ -43,11 +43,7 @@ export async function debugCommand(options) {
 
   let baseApk = options.base ? path.resolve(options.base) : ''
   if (!baseApk) {
-    const baseName = apkBaseName(
-      String(project.outputPrefix ?? resolved.name),
-      resolved.versionName,
-      resolved.versionCode,
-    )
+    const baseName = apkBaseName(resolveApkPrefix(project, resolved), resolved.versionName, resolved.versionCode)
     const candidate = path.join(path.resolve(project.outputDir), `${baseName}_debug_latest.apk`)
     baseApk = (await exists(candidate)) ? candidate : ''
   }

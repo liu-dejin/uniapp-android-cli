@@ -152,6 +152,25 @@ function timestamp() {
 }
 
 /**
+ * APK 前缀：显式 outputPrefix > manifest 展示名 > 项目标识/appid。
+ * 中文展示名清洗后会变成空串，不能直接退化成 "app"，否则多项目会互相撞名。
+ * @param {{ outputPrefix?: string, name?: string }} project
+ * @param {{ name?: string, appid?: string }} resolved
+ * @returns {string}
+ */
+export function resolveApkPrefix(project, resolved) {
+  const explicit = String(project.outputPrefix ?? '').trim()
+  if (explicit) {
+    return explicit
+  }
+  const display = String(resolved.name ?? '').trim()
+  if (display && display.replace(/[^\w.-]+/g, '').length > 0) {
+    return display
+  }
+  return String(project.name ?? resolved.appid ?? 'app')
+}
+
+/**
  * @param {string} projectName
  * @param {string} versionName
  * @param {number} versionCode
