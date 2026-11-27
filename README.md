@@ -73,10 +73,12 @@ uni-pack debug -p <项目>     # 真机调试
 | 依赖 | 要求 |
 | --- | --- |
 | Node.js | `^20.19.0 \|\| >=22.12.0` |
-| DCloud Android 离线 SDK | 版本与项目编译器一致 |
+| DCloud Android 离线 SDK | 版本与项目编译器一致，需手动下载（见[离线 SDK 下载](#离线-sdk-下载)） |
 | Android SDK | 含 build-tools（apksigner）与 platform-tools（adb） |
 | JDK | 17+ |
 | HBuilderX | 仅 HBuilderX 项目需要，版本与离线 SDK 对齐 |
+
+### 环境变量
 
 以下环境变量可在 `init` 前设置，也可在交互问答中填写：
 
@@ -88,6 +90,33 @@ uni-pack debug -p <项目>     # 真机调试
 | `ANDROID_HOME` | Android SDK 根目录（兼容 `ANDROID_SDK_ROOT`） |
 | `JAVA_HOME` | JDK 17+ 根目录 |
 | `UNI_PACK_TEMP` | 前端构建临时目录，默认 `<workDir>/<项目>/tmp` |
+
+### 离线 SDK 下载
+
+离线 SDK 不随 npm 包分发，只能手动下载。DCloud 官方页用的是百度云 / 和彩云：要登录，还受网盘限速。而本工具要求「编译器版本 = `Android-SDK@x.yy`」，换项目、升级依赖时经常要同时留几个版本，逐个从官方网盘拉很折腾。
+
+| 渠道 | 覆盖范围 | 说明 |
+| --- | --- | --- |
+| [DCloud 官方下载页](https://nativesupport.dcloud.net.cn/AppDocs/download/android.html) | 全部版本（含 Alpha、历史版本） | 百度云 / 和彩云，需登录、速度受会员限制 |
+| [123 云盘镜像](https://1812802492.share.123pan.cn/123pan/zSJKVv-rmtbd) | 5.34 及以前 | 免费不限速、下载免登录，个人整理的非官方镜像 |
+
+> 镜像只为省掉网盘限速，与官方包的一致性需自行核对；对来源敏感的场景请走官方渠道。镜像未覆盖的版本（如 5.35+、新版 Alpha）用官方下载页补。
+
+解压后保持目录名不变（版本就是从 `Android-SDK@x.yy` 里解析的），`--sdk` 指向含 `HBuilder-Integrate-AS` 的那一层：
+
+```text
+Android-SDK@5.34.82692_20261030/
+├── HBuilder-Integrate-AS/          # 模板工程，构建时整体复制到工作目录
+│   ├── simpleDemo/                 # 打包模块（build.gradle、AndroidManifest.xml）
+│   └── gradlew / gradlew.bat
+└── SDK/
+    ├── libs/*.aar                  # 基础 AAR
+    └── assets/data/dcloud_control.xml
+```
+
+- 解压多套了一层同名目录不影响识别，uni-pack 会自动下钻找 `HBuilder-Integrate-AS`；
+- 只有一套 SDK：`uni-pack init --sdk <目录>` 写入用户配置，或设置 `UNI_SDK_ROOT`；
+- 多版本共存：放进同一父目录，用 `UNI_SDK_DIRS` / `sdk.searchDirs` 指过去，构建时按项目编译器版本自动挑；默认也会扫描 `~/android-sdk/uniapp-Android`。
 
 ### 应用图标与启动图
 
@@ -109,6 +138,8 @@ uni-pack version
 ## 快速开始
 
 ```bash
+# 0. 准备与编译器同号的离线 SDK（下载与目录结构见「环境要求 → 离线 SDK 下载」）
+
 # 1. 初始化：自动识别项目类型，补全包名/AppKey/证书/输出目录
 uni-pack init -p ../PRO_DIS_V2
 
@@ -332,7 +363,8 @@ uni-pack debug -p PRO_PHONE
 
 | 现象 | 处理 |
 | --- | --- |
-| 未找到离线 SDK | 设置 `UNI_SDK_ROOT` / `sdk.searchDirs`，或 `init --sdk <目录>` |
+| 未找到离线 SDK | 设置 `UNI_SDK_ROOT` / `sdk.searchDirs`，或 `init --sdk <目录>`；还没下载见[离线 SDK 下载](#离线-sdk-下载) |
+| 离线 SDK 只有百度云、下载慢 | 用 [123 云盘镜像](https://1812802492.share.123pan.cn/123pan/zSJKVv-rmtbd)（5.34 及以前，不限速免登录），下载后核对版本号 |
 | 版本不一致 | 按提示升级项目依赖/HBuilderX，或补同号离线 SDK |
 | 找不到 HBuilderX | `init --hbuilderx <目录>` 或设置 `HBUILDERX_HOME` |
 | App 停在启动页 / AppKey 错误 | 核对 DCloud 后台 appid + 小写包名 + 证书 SHA1；重跑 `init` 统一包名 |
